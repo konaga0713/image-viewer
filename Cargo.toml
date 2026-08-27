@@ -1,0 +1,12 @@
+[package]
+name = "image-viewer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.29"            # GUIフレームワーク (マルチウィンドウ対応)
+egui = "0.29"
+egui_extras = { version = "0.27", features = ["all_loaders"] } # 画像ローダー統合
+image = "0.24"             # 標準的なJPG/PNG等のデコード
+libloading = "0.8"         # プラグイン(動的ライブラリ)のロード用
+rfd = "0.14"               # ファイルダイアログ用
