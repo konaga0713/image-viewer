@@ -1,0 +1,2 @@
+WINIT_UNIX_BACKEND=x11 cargo run
+WINIT_UNIX_BACKEND=wayland cargo run
