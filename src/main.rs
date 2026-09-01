@@ -161,7 +161,15 @@ fn setup_japanese_font(ctx: &egui::Context) {
 
     // .ttc ではなく .ttf ファイルを優先的に指定
     let font_paths = [
-// --- WSL環境用（Windows側のフォントを参照） ---
+
+    // OS標準の日本語フォントパスの候補
+    "C:\\Windows\\Fonts\\msyh.ttc",       // Windows (メイリオ / YaHei)
+    "C:\\Windows\\Fonts\\yuantic.ttf",    // Windows (游ゴシック)
+    "C:\\Windows\\Fonts\\msgothic.ttc",   // Windows (ＭＳ ゴシック)
+    "/System/Library/Fonts/Hiragino Sans GB.ttc", // macOS
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", // Linux
+
+    // --- WSL環境用（Windows側のフォントを参照） ---
 // 軽量な単一 .ttf フォントを最優先にする
     "/mnt/c/Windows/Fonts/yugothr.ttf",       // 游ゴシック (約4MB)
     "/mnt/c/Windows/Fonts/yugothb.ttf",       // 游ゴシック Bold
@@ -170,12 +178,6 @@ fn setup_japanese_font(ctx: &egui::Context) {
     // .ttc は末尾に配置
     "/mnt/c/Windows/Fonts/meiryo.ttc",    
     
-    // OS標準の日本語フォントパスの候補
-    "C:\\Windows\\Fonts\\msyh.ttc",       // Windows (メイリオ / YaHei)
-    "C:\\Windows\\Fonts\\yuantic.ttf",    // Windows (游ゴシック)
-    "C:\\Windows\\Fonts\\msgothic.ttc",   // Windows (ＭＳ ゴシック)
-    "/System/Library/Fonts/Hiragino Sans GB.ttc", // macOS
-    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc", // Linux
     ];
 
     let mut font_data = None;
