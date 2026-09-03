@@ -1,5 +1,7 @@
 mod plugin;
 mod sub_window;
+mod image_operation;
+mod image_save;
 
 use eframe::egui;
 use plugin::PluginManager;
@@ -9,6 +11,7 @@ use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
+        renderer: eframe::Renderer::Glow,
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 600.0])
             .with_title("Image Explorer App"),
@@ -68,9 +71,10 @@ impl MyApp {
 }
 
 impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // --- サブウィンドウの描画・管理 ---
-        // メイン画面が閉じられると、アプリケーション全体が終了しすべてのサブ画面も自動消去されます
+    // --- サブウィンドウの描画・管理 ---
+    // メイン画面が閉じられると、アプリケーション全体が終了しすべてのサブ画面も自動消去されます
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
         self.sub_windows.retain_mut(|sub_win| {
             let mut keep_open = true;
 
@@ -86,12 +90,13 @@ impl eframe::App for MyApp {
                 egui::ViewportBuilder::default()
                     .with_title(format!("Sub Window - {}", filename))
                     .with_inner_size([800.0, 600.0]),
-                |sub_ctx, class| {
-                    if class == egui::ViewportClass::Embedded {
+                |sub_ui, class| {
+                    if class == egui::ViewportClass::EmbeddedWindow {
                         return;
                     }
-                    sub_win.ui(sub_ctx, &self.plugin_mgr);
-                    if sub_ctx.input(|i| i.viewport().close_requested()) {
+
+                   sub_win.ui(sub_ui, &self.plugin_mgr);
+                    if sub_ui.ctx().input(|i| i.viewport().close_requested()) {
                         keep_open = false;
                     }
                 },
@@ -100,7 +105,8 @@ impl eframe::App for MyApp {
         });
 
         // --- メイン画面 GUI ---
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::Panel::top("top_panel").show(ui, |ui| {
+            let _ctx = ui.ctx();
             ui.horizontal(|ui| {
                 if ui.button("フォルダを開く").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -115,10 +121,10 @@ impl eframe::App for MyApp {
         });
 
         // 左右ペイン構成
-        egui::SidePanel::left("left_pane")
+        egui::Panel::left("left_pane")
             .resizable(true)
-            .default_width(250.0)
-            .show(ctx, |ui| {
+            .default_size(250.0)
+            .show(ui, |ui| {
                 ui.heading("フォルダツリー / ファイル一覧");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for path in &self.files {
@@ -139,7 +145,7 @@ impl eframe::App for MyApp {
                 });
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             ui.heading("プレビュー・アクション（右ペイン）");
             if let Some(selected_path) = &self.selected_file {
                 ui.label(format!("選択中: {}", selected_path.display()));
@@ -153,6 +159,7 @@ impl eframe::App for MyApp {
             }
         });
     }
+   
 }
 
 /// OSごとの日本語フォントを自動検索してロードする関数
@@ -192,7 +199,7 @@ fn setup_japanese_font(ctx: &egui::Context) {
     if let Some(data) = font_data {
         fonts.font_data.insert(
             "jp_font".to_owned(),
-            egui::FontData::from_owned(data),
+            egui::FontData::from_owned(data).into(),
         );
 
         // デフォルトフォント群の先頭に優先設定
