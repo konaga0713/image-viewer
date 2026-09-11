@@ -1749,6 +1749,7 @@ dependencies = [
  "libloading 0.9.0",
  "num-format",
  "rfd",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

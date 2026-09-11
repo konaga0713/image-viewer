@@ -1,0 +1,38 @@
+use std::path::Path;
+use std::time::Duration;
+
+use crate::image_operation::Rotation;
+
+pub trait ImageContent: Send {
+    /// 現在表示すべき画像をRGBA形式で取得
+    fn current_image(&self) -> image::RgbaImage;
+    /// 現在の画像サイズ
+    fn size(&self) ->  egui::Vec2;
+
+    /// 回転
+    fn rotate_right(&mut self);
+    fn rotate_left(&mut self);
+    fn rotation(&self) -> Rotation;
+
+    /// アニメーション画像
+    fn is_animated(&self) -> bool {
+        false
+    }
+    fn next_frame(&mut self) -> Option<Duration> {
+        None
+    }
+    fn current_delay(&self) -> Option<Duration> {
+        None
+    }
+    fn frame_count(&self) -> usize {
+        1
+    }
+    
+    fn is_modified(&self) -> bool {
+        false
+    }
+    ///　保存
+    fn save(&self, path: &Path) -> Result<(), String>; 
+
+}
+

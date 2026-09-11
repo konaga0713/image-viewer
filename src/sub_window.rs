@@ -2,12 +2,28 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::sync::Arc;
-use egui::plugin;
+
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::POINT;
+
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Graphics::Gdi::{
+    GetMonitorInfoW,
+    MonitorFromPoint,
+    MONITORINFO,
+    MONITOR_DEFAULTTONEAREST,
+};
 
 use crate::egui::TextureHandle;
 use crate::plugin::PluginManager;
-use crate::image_operation::Rotation;
+use crate::image_content::ImageContent;
 use crate::image_property::ImageProperty;
+use crate::gif_animation::GifAnimation;
+use crate::static_image::StaticImage; 
+
+// 上部UI・タイトルバー等のための余裕
+const TOP_MARGIN :f32 = 80.0;
+const SIDE_MARGIN:f32 = 0.0;
 
 pub struct SubWindow {
     pub id: egui::ViewportId,
@@ -17,21 +33,27 @@ pub struct SubWindow {
     pub folder_history: Vec<PathBuf>, /// フォルダ移動履歴（前後移動用）
     pub fit_to_screen: bool,     /// オプション: 自動縮小モード
     pub zoom_scale: f32,         /// 手動拡大縮小用スケール
-    pub rotation: Rotation,     /// 画像回転情報
     pub show_property: bool,     /// プロパティ表示フラグ
     
     texture: Option<TextureHandle>,
+    image: Option<Box<dyn ImageContent>>,
     original_image_size: Option<egui::Vec2>,
     loading: bool,
     keep_window_reposition: bool,
     show_save_confirm: bool,          /// 保存確認ダイアログ
     // スレッド間通信用チャンネル
-    tx: Sender<(PathBuf, Result<image::DynamicImage, String>)>,
-    rx: Receiver<(PathBuf, Result<image::DynamicImage, String>)>,
+    tx: Sender<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
+    rx: Receiver<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
 }
 
 impl SubWindow {
-    pub fn new(id: egui::ViewportId, path: PathBuf, fit_to_screen: bool, plugin_mgr: Arc<PluginManager>) -> Self {
+    pub fn new(
+        id: egui::ViewportId,
+        path: PathBuf,
+        fit_to_screen: bool, 
+        plugin_mgr: Arc<PluginManager>,
+        ctx: &egui::Context,
+    ) -> Self {
         let (tx, rx) = channel();
 
         // 同一ディレクトリ内のファイル一覧を取得（矢印キー移動用）
@@ -44,7 +66,7 @@ impl SubWindow {
         
         let image_index = directory_files.iter().position(|p| p == &path).unwrap_or(0);
 
-        let mut sub_win = Self {
+        let mut sub_window = Self {
             id,
             current_path: path.clone(),
             directory_files,
@@ -53,8 +75,8 @@ impl SubWindow {
             fit_to_screen,
             zoom_scale: 1.0,
             texture: None,
+            image: None,
             original_image_size: None,
-            rotation: Rotation::None,
             show_property: false,
             loading: false,
             keep_window_reposition: false,
@@ -63,33 +85,62 @@ impl SubWindow {
             rx,
         };
 
-        sub_win.load_image_async(plugin_mgr.clone());
-        sub_win.change_directory(path, &egui::Context::default(), &plugin_mgr);
-        sub_win 
+        sub_window.load_async(plugin_mgr.clone(), ctx.clone(),);
+
+        sub_window 
     }
 
     /// 画像のデコード処理を別スレッドで実行する
-    fn load_image_async(&mut self, plugin_mgr: Arc<crate::plugin::PluginManager>) {
+    fn load_async(&mut self, plugin_mgr: Arc<crate::plugin::PluginManager>, ctx: egui::Context,) {
         self.loading = true;
         let path = self.current_path.clone();
         let tx = self.tx.clone();
 
         thread::spawn(move || {
             // バックグラウンドでプラグインデコードを実行
-            let res = plugin_mgr.try_decode(&path)
-                .map(|img| {
-                    // WSLg保護のための安全サイズ縮小
-                    let max_dim = 3840;
-                    if img.width() > max_dim || img.height() > max_dim {
-                        img.thumbnail(max_dim, max_dim)
-                    } else {
-                        img
-                    }
-                })
-                .map_err(|e| e.to_string());
+            let result = 
+                if path 
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("gif"))
+                    .unwrap_or(false)
+                {
+                    GifAnimation::load(&path)
+                        .map(|gif| {
+                            Box::new(gif) as Box<dyn ImageContent>
+                        })
+                        .map_err(|e| e.to_string())
+                } else {
+                    plugin_mgr
+                        .try_decode(&path)
+                        .map(|img | {
+                            // WSLg保護のための安全サイズ縮小
+                            let max_dim = 3840;
+                            let img =
+                                if img.width() > max_dim || img.height() > max_dim {
+                                    img.thumbnail(max_dim, max_dim)
+                                } else {
+                                    img
+                                };
+                            Box::new(
+                                StaticImage::new(img)
+                            ) as Box<dyn ImageContent>
+                        })    
+                        .map_err(|e| e.to_string())
+                };
 
-            let _ = tx.send((path, res));
+            let _ = tx.send((path, result));
+            // 読み込み完了後にGUIを再描画
+            ctx.request_repaint();            
         });
+    }
+
+    fn is_gif(&self) -> bool {
+        self.current_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("gif"))
+            .unwrap_or(false)
     }
 
     pub fn ui(
@@ -98,6 +149,7 @@ impl SubWindow {
         plugin_mgr: &Arc<crate::plugin::PluginManager>,
     )  {
         let ctx = ui.ctx().clone();
+
         // 画像の読み込み処理
         while let Ok((loaded_path, result)) = self.rx.try_recv() {
             if loaded_path != self.current_path {
@@ -105,36 +157,40 @@ impl SubWindow {
             }
 
             self.loading = false;
-            if let Ok(mut img) = result {
-                // 現在の回転状態を画像に反映
-                img = match self.rotation {
-                    Rotation::None => img,
-                    Rotation::Right => img.rotate90(),
-                    Rotation::Rotate180 => img.rotate180(),
-                    Rotation::Left => img.rotate270(),
-                };
 
-                let size = [img.width() as _, img.height() as _];
-                let image_buffer = img.to_rgba8();
-                let pixels = image_buffer.as_flat_samples();
-                let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                    size,
-                    pixels.as_slice(),
-                );
+            match result {
+                Ok(image) => {
+                    self.original_image_size = Some(image.size());
+                    self.resize_window_to_image(&ctx);    //ウィンドウサイズを画面に合わせる
+
+                    let rgba = image.current_image();
+                    let size = [
+                        rgba.width() as usize,
+                        rgba.height() as usize,
+                    ];
+                    let color_image =
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            size,
+                            rgba.as_raw(),
+                    );
                 
-                self.texture = Some(ctx.load_texture(
-                    self.current_path.to_string_lossy(),
-                    color_image,
-                    Default::default(),
-                ));
-            } else {
-                if let Err(err_msg) = result {
+                    self.texture = 
+                        Some(ctx.load_texture(
+                            self.current_path.to_string_lossy(),
+                            color_image,
+                            Default::default(),
+                        )
+                    );
+                    self.image = Some(image);
+                } 
+
+                Err(err_msg) => {
                     eprintln!("Failed to load image: {}", err_msg);
+                    self.texture = None;
+                    self.image = None; 
                 }
-                self.texture = None;
             }
         }
-
         // ============================================================
         // キーボード操作
         //
@@ -154,8 +210,8 @@ impl SubWindow {
         let down = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
 
         match(ctrl, left, right) {
-            (true, true, false) => self.do_rotate_left(&ctx, plugin_mgr),          // ctrl + ← 左回転
-            (true, false, true) => self.do_rotate_right(&ctx, plugin_mgr),     // ctrl + → 右回転
+            (true, true, false) => self.do_rotate_left(&ctx),          // ctrl + ← 左回転
+            (true, false, true) => self.do_rotate_right(&ctx),     // ctrl + → 右回転
             (false,true,false)=> self.previous_image(&ctx,plugin_mgr),   // ← 前の画像
             (false,false,true)=> self.next_image(&ctx,plugin_mgr), // → 次の画像
             _ => {}
@@ -173,14 +229,7 @@ impl SubWindow {
         if ctrl && ctx.input(|i| i.key_pressed(egui::Key::S)) {
             println!("ctrl + s pressed");
 
-            match self.rotation {
-                Rotation::None => {
-                    self.show_save_confirm = true;
-                }
-                _ => {
-                    self.save_current_image();
-                }
-            }
+            self.request_save();
        }
 
         // UIの描画
@@ -201,11 +250,11 @@ impl SubWindow {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("画像", |ui| {
                     if ui.button("左回転 ctrl + ←").clicked() {
-                        self.do_rotate_left(&ctx, plugin_mgr);
+                        self.do_rotate_left(&ctx);
                         ui.close();
                     }
                     if ui.button("右回転 ctrl + →").clicked() {
-                        self.do_rotate_right(&ctx, plugin_mgr);
+                        self.do_rotate_right(&ctx);
                         ui.close();
                     }
                     ui.separator();
@@ -213,16 +262,7 @@ impl SubWindow {
                     if ui.button("画像保存 ctrl + s").clicked() {
                         println!("画像保存");
 
-                        match self.rotation {
-                            Rotation::None => {
-                                self.show_save_confirm = true;
-
-                            }
-                            _ => {
-                                self.save_current_image();
-                            }
-                        }
-
+                        self.request_save();
                         ui.close();
                     }
 
@@ -238,19 +278,17 @@ impl SubWindow {
         // 画像表示エリア（原寸・自動縮小・左上基準）
         egui::CentralPanel::default().show(ui, |ui| {
             if let Some(texture) = &self.texture {
-                let available_size = ui.available_size();
-                let texture_size = texture.size_vec2();
+                let image_size = texture.size_vec2() * self.zoom_scale;
 
-                // 拡大縮小計算
-                let base_size = texture_size * self.zoom_scale;
-                // 自動縮小オプション適用 (画面に入りきらない場合のみ左上基準で縮小)
-                let display_size = if self.fit_to_screen{
-                    let scale_x = available_size.x / texture_size.x;
-                    let scale_y = available_size.y / texture_size.y;
-                    let fit_scale = scale_x.min(scale_y).min(1.0);
-                    base_size * fit_scale
+                let display_size = if self.fit_to_screen {
+                    let available_size = ui.available_size();
+                    let scale_x = available_size.x / image_size.x;
+                    let scale_y = available_size.y / image_size.y;
+                    // 1.0を上限にするので、小さい画像は拡大しない
+                    let scale = scale_x.min(scale_y).min(1.9);
+                    image_size * scale
                 } else {
-                    base_size
+                    image_size  // 自動縮小OFFの場合は原寸表示
                 };
 
                 // スクロールエリアを配置し、基準を左上に設定
@@ -264,11 +302,38 @@ impl SubWindow {
                     }); 
                    
             }
+
+            //animation 更新処理
+            if let Some(image) = &mut self.image {
+                if image.is_animated() {
+                    let rgba = image.current_image();
+                    let size =[
+                        rgba.width() as usize,
+                        rgba.height() as usize, 
+                    ];
+                    let color_image =
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            size,
+                            rgba.as_raw(),
+                        );
+
+                    self.texture = Some(
+                        ctx.load_texture(
+                            self.current_path.to_string_lossy(),
+                            color_image,
+                            Default::default(),
+                        )
+                    );                   
+                    if let Some(delay) = image.next_frame() {
+                        ctx.request_repaint_after(delay);
+                    } 
+                }
+            }
         });
 
         // プロパティ表示
         if self.show_property {
-            crate::image_property::ImageProperty::show(
+            ImageProperty::show(
                 &ctx,
                 &self.current_path,
                 &mut self.show_property,
@@ -296,53 +361,84 @@ impl SubWindow {
 
     }
 
-    fn keep_window_on_screen(&self, ctx: &egui::Context) {
-        let (outer_rect, monitor_size) = ctx.input( |i| {
-            let viewport = i.viewport();
-                (viewport.outer_rect, viewport.monitor_size)
-        });
-
-        let Some(outer_rect) = outer_rect else {
+    /// 原寸大表示時に、実際の outer_rect が
+    /// Windowsの作業領域を超えていないか確認し、
+    /// 超過している場合だけウィンドウサイズを縮小する。
+    fn correct_window_size_to_work_area(&mut self, ctx: &egui::Context) {
+        let Some(outer_rect) = 
+            ctx.input(|i| i.viewport().outer_rect) 
+        else {
             return;
         };
-        let Some(monitor_size) = monitor_size else {
-            return;
-        };
-
-        let mut pos = outer_rect.min;
-        let size = outer_rect.size();
-        let mut changed = false;
         
-        // 右にはみ出している
-        if pos.x + size.x > monitor_size.x {
-            pos.x = monitor_size.x - size.x;
-            changed = true;
-        }
+        let Some(work_rect) = 
+            Self::get_avaivable_screen_rect(ctx)  
+        else {
+            return;
+        };
 
-        // 下にはみ出している
-        if pos.y + size.y > monitor_size.y {
-            pos.y = monitor_size.y - size.y;
-            changed = true;
-        }
+        // 現在の outer_rect が作業領域を超えているか確認        
+        let overflow_x = (outer_rect.max.x - work_rect.max.x).max(0.0);
+        let overflow_y = (outer_rect.max.y - work_rect.max.y).max(0.0);
 
-        // 左にはみ出している
-        if pos.x < 0.0 {
-            pos.x = 0.0;
-            changed = true;
+        println!(
+    "correction check: outer_max={:?}, work_max={:?}, overflow=({:.1},{:.1})",
+    outer_rect.max,
+    work_rect.max,
+    overflow_x,
+    overflow_y
+);
+        // はみ出していなければ補正終了
+        if overflow_x <= 0.0 && overflow_y <= 0.0 {
+            return;
         }
+    
+        // 作業領域内に収まる outer サイズを計算
+        let allowed_outer_width = (work_rect.max.x - outer_rect.min.x).max(100.0);
+        let allowed_outer_height = (work_rect.max.y - outer_rect.min.y).max(100.0);
+        let allowed_outer_size  = egui::vec2(
+            allowed_outer_width,
+            allowed_outer_height,
+        );
 
-        // 上にはみ出している
-        if pos.y < 0.0 {
-            pos.y = 0.0;
-            changed = true;
-        }
+        // outer と inner の差を取得
+        let current_inner_size = 
+            ctx.input(|i| i.viewport().inner_rect)
+                .map(|r| r.size());
 
-        // ウィンドウ位置を修正する
-        if changed {
-            ctx.send_viewport_cmd(
-                egui::ViewportCommand::OuterPosition(pos),
-            );
-        }
+        let Some(current_inner_size) = 
+            current_inner_size 
+        else {
+            return;
+        };    
+
+        let decoration = egui::vec2(
+            (outer_rect.width() - current_inner_size.x).max(0.0),
+            (outer_rect.height() - current_inner_size.y).max(0.0),
+        );
+
+        // InnerSize に指定するサイズ
+        let corrected_inner = egui::vec2(
+            (allowed_outer_size.x - decoration.x).max(100.0),
+            (allowed_outer_size.y - decoration.y).max(100.0),
+        );
+
+        println!(
+        "correction: outer_size={:?}, \
+        allowed_outer={:?}, decoration={:?}, \
+        corrected_inner={:?}",
+        outer_rect.size(),
+        allowed_outer_size,
+        decoration,
+        corrected_inner,
+    );
+
+        // 位置は変更しない。
+        // サイズだけ変更する。
+        ctx.send_viewport_cmd(
+            egui::ViewportCommand::InnerSize(corrected_inner)
+        );
+
     }
 
     // ------------------------------------------------------------
@@ -354,13 +450,11 @@ impl SubWindow {
             self.current_path = self.directory_files[self.image_index].clone();
 
             self.texture = None; // 前の画像を破棄してメモリ解放
-            self.rotation = Rotation::None; // 回転状態をリセット
+            self.image = None;
+            self.original_image_size = None;
             self.loading = true;
-            // サブウィンドウを画面内へ戻す
-            self.keep_window_reposition = true;
-            self.keep_window_on_screen(&ctx);
             // 新しい画像を非同期で読み込む
-            self.load_image_async(plugin_mgr.clone());
+            self.load_async(plugin_mgr.clone(), ctx.clone(),);
         }
     }
 
@@ -372,14 +466,13 @@ impl SubWindow {
         if self.image_index + 1 < self.directory_files.len() {
             self.image_index += 1;
             self.current_path = self.directory_files[self.image_index].clone();
+
             self.texture = None; // 前の画像を破棄してメモリ解放
-            self.rotation = Rotation::None; // 回転状態をリセット
+            self.image = None;
+            self.original_image_size = None;
             self.loading = true;
-            // サブウィンドウを画面内へ戻す
-            self.keep_window_reposition = true;
-            self.keep_window_on_screen(&ctx);
             // 新しい画像を非同期で読み込む
-            self.load_image_async(plugin_mgr.clone());
+            self.load_async(plugin_mgr.clone(), ctx.clone(),);
         }
     }
 
@@ -479,12 +572,10 @@ impl SubWindow {
         self.image_index = 0;
 
         self.texture = None;
-        self.rotation=  Rotation::None;
+        self.image = None;
         self.original_image_size = None;
         self.loading = true;
-        self.keep_window_reposition = true;
-        self.keep_window_on_screen(ctx);
-        self.load_image_async(plugin_mgr.clone());
+        self.load_async(plugin_mgr.clone(), ctx.clone(),);
 
     }
 
@@ -516,15 +607,6 @@ impl SubWindow {
         loop{
             let parent_dir = dir.parent()?.to_path_buf();
             let sibling_dirs = Self::get_subdirectries(&parent_dir);
-/*          println!("dir        = {:?}", dir);
-            println!("parent_dir = {:?}", parent_dir);
-                        let sibling_dirs = Self::get_subdirectries(&parent_dir);
-            println!("sibling_dirs:");
-
-            for d in &sibling_dirs {
-                println!("  {:?}", d);
-            }
-*/
             let image_index = sibling_dirs.iter().position(|d| d == &dir)?;
         
 //            println!("image_index = {}", image_index);
@@ -627,47 +709,296 @@ impl SubWindow {
         None
     }    
 
-    fn do_rotate_right(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {
-        self.rotation = self.rotation.rotate_right();
-    
-        println!("Rotated right. New rotation: {:?}", self.rotation.degrees());
+    //回転処理　左
+    fn do_rotate_left(
+        &mut self, 
+        ctx: &egui::Context, 
+    ) {
+        let Some(image) = 
+            &mut self.image 
+        else {
+            return;
+        };
 
+        image.rotate_left();
+
+        let rgba = image.current_image();
+        let size = [
+            rgba.width() as usize,
+            rgba.height() as usize,
+        ];
+        let color_image = 
+            egui::ColorImage::from_rgba_unmultiplied(
+                size, rgba.as_raw(),
+        );
+        self.texture = 
+            Some(ctx.load_texture(
+                self.current_path.to_string_lossy(),
+                color_image,
+                Default::default(),
+            )
+        );
+
+        // 回転後の画像サイズを保存
+        self.original_image_size = Some(image.size());
         if self.fit_to_screen {
-            self.zoom_scale = 1.0;
-            self.keep_window_reposition = true;
+            self.resize_window_to_image(ctx);
         }
-        self.texture = None; // 画像を破棄してメモリ解放
-        self.load_image_async(plugin_mgr.clone()); // 新しい回転状態で画像を再読み込み
         ctx.request_repaint(); // UIの再描画を要求
-    }
+     }
 
-    fn do_rotate_left(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {
-        self.rotation = self.rotation.rotate_left();
-    
-        println!("Rotated left. New rotation: {:?}", self.rotation.degrees());
+    //回転処理　右
+    fn do_rotate_right(
+        &mut self, 
+        ctx: &egui::Context, 
+    ) {
+        let Some(image) = 
+            &mut self.image 
+        else {
+            return;
+        };
 
+        image.rotate_right();
+
+        let rgba = image.current_image();
+        let size = [
+            rgba.width() as usize,
+            rgba.height() as usize,
+        ];
+        let color_image = 
+            egui::ColorImage::from_rgba_unmultiplied(
+                size, rgba.as_raw(),
+        );
+        self.texture = 
+            Some(ctx.load_texture(
+                self.current_path.to_string_lossy(),
+                color_image,
+                Default::default(),
+            )
+        );
+
+        // 回転後の画像サイズを保存
+        self.original_image_size = Some(image.size());
         if self.fit_to_screen {
-            self.zoom_scale = 1.0;
-            self.keep_window_reposition = true;
+            self.resize_window_to_image(ctx);
         }
-        self.texture = None; // 画像を破棄してメモリ解放
-        self.load_image_async(plugin_mgr.clone()); // 新しい回転状態で画像を再読み込み
         ctx.request_repaint(); // UIの再描画を要求
     }
 
     /// 画像保存
     fn save_current_image(&self) {    
-        match crate::save_image::save_image(
-            &self.current_path,
-            self.rotation,
-        ) {
-            Ok(()) => {
-
-            }
-            Err(err) => {
+        let Some(image) = 
+            &self.image 
+        else {
+            return;
+        };    
+        if let Err(err) = image.save(&self.current_path) {
                 eprintln!("{}",err);
-            }
         }
     }
 
+    /// サブウィンドウのサイズの設定
+    /// タスクバー等を除いた使用可能領域を超えないようにする。
+    fn resize_window_to_image(&self, ctx: &egui::Context) {
+        let Some(original_size) = 
+            self.original_image_size 
+        else {
+            return;
+        };
+
+        let Some(outer_rect) = 
+            ctx.input(|i| i.viewport().outer_rect) 
+        else {
+            return;
+        };
+
+        let Some(work_rect) = 
+            Self::get_avaivable_screen_rect(ctx) 
+        else {
+            return;
+        };
+
+        // ウインドウのサイズを取得
+        //　タイトルバーや枠を含む
+        let inner_size = ctx
+            .input(|i| i.viewport().inner_rect)
+            .map(|r| r.size())
+            .unwrap_or(outer_rect.size()
+        );
+        let decoration = egui::vec2(
+            (outer_rect.width() - inner_size.x).max(0.0),
+            (outer_rect.height() - inner_size.y).max(0.0),
+        );
+
+        // 現在のサブウィンドウ位置
+        let position = outer_rect.min;
+        // タスクバーを除いた使用可能領域から
+        // 現在位置より右・下に残っている領域を取得
+        let available_outer_width = (work_rect.max.x - position.x).max(100.0);
+        let available_outer_height = (work_rect.max.y - position.y).max(100.0);
+
+        // 拡大率を適用した目標の画像サイズ
+        let scaled_image_size = original_size * self.zoom_scale;
+
+        if self.fit_to_screen {
+            // 自動縮小ON: 利用可能な内部描画エリアに合わせて縮小
+            let max_image_width = (available_outer_width - decoration.x - (SIDE_MARGIN * 2.0)).max(100.0);
+            let max_image_height = (available_outer_height - decoration.y - TOP_MARGIN).max(100.0);
+            
+            let scale_x = max_image_width / scaled_image_size.x;
+            let scale_y = max_image_height / scaled_image_size.y;
+
+            // 小さい画像は拡大しない
+            let scale = scale_x.min(scale_y).min(1.0);
+
+            // サブウィンドウサイズ
+            let window_size = egui::vec2(
+                (scaled_image_size.x * scale) + SIDE_MARGIN * 2.0,
+                (scaled_image_size.y * scale) + TOP_MARGIN,
+            );
+        println!(
+            "fit: available={},{} window={},{}",
+            available_outer_width,
+            available_outer_height,
+            window_size.x,
+            window_size.y
+        );
+            // ウィンドウサイズ変更
+            ctx.send_viewport_cmd(
+            egui::ViewportCommand::InnerSize(window_size),  
+            );
+        } else {
+            // 原寸表示（自動縮小OFF）:
+            // 目標とするInnerサイズ（画像原寸 + UIマージン）            
+            let target_inner = egui::vec2(
+                scaled_image_size.x + SIDE_MARGIN * 2.0,
+                scaled_image_size.y + TOP_MARGIN,
+            );
+
+            // 目標サイズに枠（decoration）を足したOuterサイズ
+            let target_outer = target_inner + decoration;      
+            // 現在位置から、タスクバーを除いた領域までの最大Outerサイズ                  
+            let max_outer_width = (work_rect.max.x - position.x).max(100.0);
+            let max_outer_height = (work_rect.max.y - position.y).max(100.0);
+
+            // ウィンドウサイズを使用可能領域まで制限する。
+            let final_outer_width = target_outer.x.min(max_outer_width);
+            let final_outer_height = target_outer.y.min(max_outer_height);
+
+            // サブウィンドウサイズ
+            let final_inner = egui::vec2(
+                (final_outer_width - decoration.x).max(100.0),
+                (final_outer_height - decoration.y).max(100.0),
+            );
+
+    println!(
+        "original: image={},{} available={},{} final={},{}",
+        scaled_image_size.x,
+        scaled_image_size.y,
+        available_outer_width,
+        available_outer_height,
+        final_inner.x,
+        final_inner.y
+    );          
+            ctx.send_viewport_cmd(
+            egui::ViewportCommand::InnerSize(final_inner),  
+            );
+            
+        } 
+    }
+
+    /// タスクバー等を除いた、現在のサブウィンドウが存在する
+    /// ディスプレイの使用可能領域を取得する。
+    ///
+    /// Windows: GetMonitorInfoW() の rcWork を使用する。
+    ///
+    /// Windows以外: egui の monitor_size を使用する。
+    fn get_avaivable_screen_rect(ctx: &egui::Context) -> Option<egui::Rect> {
+        let (outer_rect, monitor_size, pixcels_per_point) = ctx.input(|i| {
+            let viewport = i.viewport();
+            (
+                viewport.outer_rect,
+                viewport.monitor_size,
+                viewport.native_pixels_per_point.unwrap_or(1.0),
+            )
+        });
+
+        let outer_rect = outer_rect?;
+
+        #[cfg(target_os = "windows")]
+        {
+            let scale = pixcels_per_point;
+            
+            // egui上のウィンドウ位置をWindowsの物理ピクセルへ変換
+            let point = POINT {
+                x: (outer_rect.min.x * scale).round() as i32,
+                y: (outer_rect.min.y * scale).round() as i32,
+            };      
+            // 現在のウィンドウ位置にあるディスプレイを取得
+            let hmonitor = unsafe {
+                MonitorFromPoint(
+                    point,
+                    MONITOR_DEFAULTTONEAREST,
+                )      
+            };
+
+            if hmonitor == std::ptr::null_mut() {
+                return None;
+            }
+            // Windowsのモニター情報を取得
+            let mut monitor_info: MONITORINFO = 
+                unsafe { std::mem::zeroed()};
+            monitor_info.cbSize = 
+                std::mem::size_of::<MONITORINFO>() as u32;
+
+            let result = unsafe {
+                GetMonitorInfoW(
+                    hmonitor,
+                    &mut monitor_info as *mut MONITORINFO,
+                )
+            };    
+            if result == 0 {
+                return None;
+            }
+
+            // rcWork:
+            // タスクバー等を除いた使用可能領域
+            let work = monitor_info.rcWork;
+            Some(egui::Rect::from_min_max(
+                egui::pos2(
+                    work.left as f32 / scale,
+                    work.top as f32 / scale,
+                ),
+                 egui::pos2(
+                    work.right as f32 / scale,
+                    work.bottom as f32 / scale,
+                ),
+            ))
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let monitor_size = monitor_size?;
+            Some(egui::REct::from_min_size(
+                egui::Pos2::Zero,
+                monitor_size,
+            ))
+        }
+    }
+
+    /// 回転などによる変更がある場合は、そのまま保存する。
+    /// 変更がない場合は保存確認ダイアログを表示する。
+    fn request_save(&mut self) {
+        
+        let Some(image) = &self.image 
+        else {
+            return;
+        };   
+
+        if image.is_modified() {
+            self.save_current_image();
+        } else {
+            self.show_save_confirm = true;
+        }    
+    } 
 }

@@ -4,8 +4,10 @@ mod image_operation;
 mod save_image;
 mod image_property;
 mod gif_animation;
+mod image_content;
+mod static_image;
 
-use eframe::egui;
+use eframe::{egui, glow::Context};
 use plugin::PluginManager;
 use std::path::PathBuf;
 use sub_window::SubWindow;
@@ -65,10 +67,10 @@ impl MyApp {
         }
     }
 
-    fn open_sub_window(&mut self, path: PathBuf) {
+    fn open_sub_window(&mut self, path: PathBuf, ctx: &egui::Context,) {
         // メイン画面で画像を選択するたびに、新しいサブ画面を作成
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
-        self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone()));
+        self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(),));
     }
 }
 
@@ -154,7 +156,7 @@ impl eframe::App for MyApp {
                 
                 // 右ペインからボタン（またはダブルクリック）でサブ画面起動
                 if ui.button("新規サブ画面で表示").clicked() {
-                    self.open_sub_window(selected_path.clone());
+                    self.open_sub_window(selected_path.clone(), &ctx);
                 }
             } else {
                 ui.label("左ペインから画像ファイルを選択してください。");

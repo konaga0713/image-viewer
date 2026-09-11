@@ -1,10 +1,10 @@
 /// 画像の回転角度
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
-    None,// 0度 
-    Right,// 90度
-    Rotate180,// 180度
-    Left,// 270度
+    None,       // 0度 
+    Right,      // 90度
+    Rotate180,  // 180度
+    Left,       // 270度
 }
 
 impl Rotation{
