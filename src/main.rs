@@ -1,7 +1,9 @@
 mod plugin;
 mod sub_window;
 mod image_operation;
-mod image_save;
+mod save_image;
+mod image_property;
+mod gif_animation;
 
 use eframe::egui;
 use plugin::PluginManager;
