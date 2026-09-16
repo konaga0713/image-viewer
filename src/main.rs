@@ -1,23 +1,40 @@
-mod plugin;
-mod sub_window;
-mod image_operation;
-mod save_image;
-mod image_property;
 mod gif_animation;
 mod image_content;
+mod image_operation;
+mod image_property;
+mod plugin;
+mod save_image;
 mod static_image;
+mod sub_window;
+mod webp_animation;
+mod webp_decoder;
+mod sub_window_folder;
+mod sub_window_window;
 
-use eframe::{egui, glow::Context};
+use eframe::egui;
+use eframe::wgpu::BindingResource::ExternalTexture;
 use plugin::PluginManager;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use sub_window::SubWindow;
 use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender};
+
+use crate::sub_window::SubWindow;
+
+// サムネイル表示枠
+const THUMBNAIL_FRAME_SIZE: egui::Vec2 = egui::vec2(160.0, 120.0);
+// サムネイルの作成結果
+struct ThumbnailResult {
+    path: PathBuf,
+    image: Result<image::RgbaImage, String>,
+} 
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 600.0])
+            .with_min_inner_size([100.0,100.0])
             .with_title("Image Explorer App"),
         ..Default::default()
     };
@@ -36,6 +53,12 @@ struct MyApp {
     sub_windows: Vec<SubWindow>,
     plugin_mgr: Arc<PluginManager>,
     auto_fit_option: bool,
+    //サムネイルのキャッシュ,処理要求チャンネル,受取チャンネル,デコード中,デコード失敗
+    thumbnail_textures: HashMap<PathBuf, egui::TextureHandle>,
+    thumbnail_tx: Sender<PathBuf>,
+    thumbnail_rx: Receiver<ThumbnailResult>,
+    thumbnail_loading: HashSet<PathBuf>,
+    thumbnail_failed:  HashSet<PathBuf>,
 }
 
 impl MyApp {
@@ -45,6 +68,39 @@ impl MyApp {
         let mut plugin_mgr = PluginManager::new();
         plugin_mgr.load_plugins(std::path::Path::new("./plugins"));
 
+        // ---------------------------------
+        // サムネイル用チャンネル
+        // ---------------------------------
+        let (thumbnail_tx, thumbnail_request_rx) =
+            mpsc::channel::<PathBuf>();
+        let (thumbnail_result_tx, thumbnail_rx) =
+            mpsc::channel::<ThumbnailResult>();
+        let thumbnail_ctx = cc.egui_ctx.clone();
+
+        // ---------------------------------
+        // サムネイルワーカースレッド
+        // ---------------------------------
+        std::thread::spawn(move || {
+            while let Ok(path) = thumbnail_request_rx.recv() {
+                let result = image::open(&path)
+                    .map(|image| {
+                        image.thumbnail(160, 120).to_rgba8() 
+                    })
+                    .map_err(|e| e.to_string());
+                let _ = thumbnail_result_tx.send(
+                    ThumbnailResult {
+                        path,
+                        image: result,
+                    }
+                );
+                // 1枚完成するたびにGUIを再描画
+                thumbnail_ctx.request_repaint();              
+            }
+        });
+
+        // ---------------------------------
+        // メイン画面の描画
+        // ---------------------------------
         let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut app = Self {
             current_dir,
@@ -53,7 +109,13 @@ impl MyApp {
             sub_windows: Vec::new(),
             plugin_mgr: Arc::new(plugin_mgr),
             auto_fit_option: true,
+            thumbnail_textures: HashMap::new(),
+            thumbnail_tx,
+            thumbnail_rx,
+            thumbnail_loading: HashSet::new(),
+            thumbnail_failed: HashSet::new(),
         };
+
         app.refresh_files();
         app
     }
@@ -64,6 +126,70 @@ impl MyApp {
                 .filter_map(|e| e.ok().map(|e| e.path()))
                 .collect();
             self.files.sort();
+
+            // 現在フォルダに存在しないサムネイルを削除
+            self.thumbnail_textures
+                .retain(|path, _| path.exists());
+
+            // 現在フォルダに存在しない処理状態を削除
+            self.thumbnail_loading
+                .retain(|path| path.exists());
+            self.thumbnail_failed
+                .retain(|path| path.exists());
+
+            // 現在フォルダの画像をサムネイル処理キューへ追加
+            for path in &self.files {
+                if !path.is_file() {
+                    continue;
+                }
+                if !self.plugin_mgr.can_decode(path) {
+                    continue;
+                }
+
+                if self.thumbnail_textures.contains_key(path) {
+                    continue;
+                }
+                if self.thumbnail_loading.contains(path) {
+                    continue;
+                }
+                if self.thumbnail_failed.contains(path) {
+                    continue;
+                }
+
+                if self.thumbnail_tx.send(path.clone()).is_ok() {
+                    self.thumbnail_loading.insert(path.clone());
+                }
+            }
+
+        }
+    }
+
+    fn update_thumbnail_results(&mut self, ctx: &egui::Context) {
+        while let Ok(result) = self.thumbnail_rx.try_recv() {
+            self.thumbnail_loading.remove(&result.path);
+
+            match result.image {
+                Ok(rgba)=> {
+                        let size = [
+                            rgba.width() as usize,
+                            rgba.height() as usize,
+                        ];
+
+                        let color_image = 
+                            egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                        let texture = ctx.load_texture(
+                            format!("thumbnail: {}", result.path.display()),
+                            color_image,
+                            egui::TextureOptions::LINEAR);
+                        self.thumbnail_textures
+                            .insert(result.path, texture);        
+
+                }
+                Err(e) => {
+                    eprintln!("サムネイル読み込み失敗: {}: {}", result.path.display(),e);
+                    self.thumbnail_failed.insert(result.path);
+                }
+            }
         }
     }
 
@@ -72,13 +198,68 @@ impl MyApp {
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
         self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(),));
     }
+
+    fn show_folder_tree(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &PathBuf,
+    ) {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return;
+        };
+        let mut dirs: Vec<PathBuf> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+
+        dirs.sort();
+
+        for dir in dirs {
+            let name = dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            let is_current = self.current_dir == dir;
+
+            egui::CollapsingHeader::new(
+                format!("📁 {}",name)
+                )
+                .id_salt(&dir)
+                .show(ui, |ui| {
+                    if ui
+                        .selectable_label(
+                            is_current,
+                            "このフォルダを表示",
+                        )
+                        .clicked()
+                    {
+                        self.current_dir = dir.clone();
+                        self.selected_file = None;
+                        self.refresh_files();
+                    }
+                    self.show_folder_tree(
+                        ui,
+                        &dir,
+                    );    
+                });
+
+        };
+
+    }
 }
+
 
 impl eframe::App for MyApp {
     // --- サブウィンドウの描画・管理 ---
     // メイン画面が閉じられると、アプリケーション全体が終了しすべてのサブ画面も自動消去されます
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // バックグラウンドで完成したサムネイルを受け取る
+        self.update_thumbnail_results(&ctx);
+
         self.sub_windows.retain_mut(|sub_win| {
             let mut keep_open = true;
 
@@ -129,41 +310,116 @@ impl eframe::App for MyApp {
             .resizable(true)
             .default_size(250.0)
             .show(ui, |ui| {
-                ui.heading("フォルダツリー / ファイル一覧");
+                ui.heading("フォルダ");
+
+                let current_dir = self.current_dir.clone();
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for path in &self.files {
-                        let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-                        if path.is_dir() {
-                            if ui.selectable_label(false, format!("📁 {}", file_name)).clicked() {
-                                self.current_dir = path.clone();
-                                self.refresh_files();
-                                break;
-                            }
-                        } else {
-                            let is_selected = self.selected_file.as_ref() == Some(path);
-                            if ui.selectable_label(is_selected, format!("🖼 {}", file_name)).clicked() {
-                                self.selected_file = Some(path.clone());
-                            }
-                        }
-                    }
+                    self.show_folder_tree(
+                        ui,
+                        &current_dir,
+                    );
                 });
             });
 
         egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("プレビュー・アクション（右ペイン）");
-            if let Some(selected_path) = &self.selected_file {
-                ui.label(format!("選択中: {}", selected_path.display()));
-                
-                // 右ペインからボタン（またはダブルクリック）でサブ画面起動
-                if ui.button("新規サブ画面で表示").clicked() {
-                    self.open_sub_window(selected_path.clone(), &ctx);
+             ui.heading("画像");
+
+            let available_width = ui.available_width();
+            // 1個のサムネイルに必要な幅
+            let item_width = 180.0; 
+
+            // 横に何個並べられるか
+            let columns = ((available_width / item_width).floor() as usize).max(1);
+
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                let image_files: Vec<PathBuf> = self
+                    .files
+                    .iter()
+                    .filter(|path| {
+                        path.is_file() && self.plugin_mgr.can_decode(path)
+                    })
+                    .cloned()
+                    .collect();
+
+                for row in image_files.chunks(columns) {
+                    ui.horizontal(|ui | {
+                        for path in row {
+                            let selected = 
+                                self.selected_file.as_ref() == Some(path);
+                            ui.vertical(|ui| {
+                                if let Some(texture) = 
+                                    self.thumbnail_textures.get(path) {
+                                    // 固定160×120のサムネイル枠
+                                    let response = ui.allocate_ui_with_layout(
+                                        THUMBNAIL_FRAME_SIZE,
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Image::new(texture)
+                                                    .fit_to_fraction(egui::vec2(1.0,1.0))
+                                                    .sense(egui::Sense::click())
+                                            )
+                                        },    
+                                    ).inner;
+
+                                    if selected {
+                                        ui.painter().rect_stroke(
+                                            response.rect,
+                                            2.0,
+                                            egui::Stroke::new(
+                                                2.0,
+                                                ui.visuals().selection.stroke.color,
+                                            ),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    }
+
+                                    // シングルクリック
+                                    if response.clicked() {
+                                        self.selected_file = Some(path.clone());
+                                    }
+
+                                    // ダブルクリック
+                                    if response.double_clicked() {
+                                        self.selected_file = Some(path.clone());
+                                        self.open_sub_window(
+                                            path.clone(),
+                                            &ctx,
+                                        );    
+                                    }
+                                } else if self.thumbnail_loading.contains(path) {
+                                    // 読み込み中
+                                    ui.allocate_ui(
+                                        THUMBNAIL_FRAME_SIZE,
+                                        |ui| {
+                                            ui.centered_and_justified(|ui| {
+                                                ui.spinner();
+                                            });
+                                        },
+                                    );
+                                } else {
+                                    // 読み込み失敗
+                                    ui.allocate_ui(
+                                        THUMBNAIL_FRAME_SIZE,
+                                        |ui| {
+                                            ui.centered_and_justified(|ui| {
+                                                ui.label("読込失敗");
+                                            });
+                                        },
+                                    );
+
+                                }
+                            });
+                        }   
+                    });
                 }
-            } else {
-                ui.label("左ペインから画像ファイルを選択してください。");
-            }
+            });
         });
     }
-   
+
+    
 }
 
 /// OSごとの日本語フォントを自動検索してロードする関数

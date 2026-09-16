@@ -2,7 +2,15 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::image_operation::Rotation;
+use crate::static_image::StaticImage;
+use crate::gif_animation::GifAnimation;
+use crate::webp_animation::WebpAnimation; 
 
+pub enum ImageContentType {
+    Static(StaticImage),
+    Gif(GifAnimation),
+    Webp(WebpAnimation),
+}
 pub trait ImageContent: Send {
     /// 現在表示すべき画像をRGBA形式で取得
     fn current_image(&self) -> image::RgbaImage;

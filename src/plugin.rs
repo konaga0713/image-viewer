@@ -1,11 +1,16 @@
-use image::DynamicImage;
+use eframe::wgpu::wgc::pipeline::ImplicitLayoutError::Passthrough;
 use libloading::{Library, Symbol};
 use std::path::Path;
+
+use crate::image_content::ImageContent;
+use crate::static_image::StaticImage;
+use crate::gif_animation::GifAnimation;
+use crate::webp_animation::WebpAnimation;
 
 // プラグインが実装すべきトレイト定義
 pub trait ImageDecoderPlugin: Send + Sync {
     fn supported_extensions(&self) -> Vec<&'static str>;
-    fn decode(&self, path: &Path) -> Result<DynamicImage, String>;
+    fn decode(&self, path: &Path) -> Result<Box<dyn ImageContent>, String>;
 }
 
 // プラグイン関数型 (動的ライブラリ側で `#[no_mangle]` して公開する関数)
@@ -36,7 +41,8 @@ impl PluginManager {
                 if path.is_file() {
                     unsafe {
                         if let Ok(lib) = Library::new(&path) {
-                            if let Ok(func) = lib.get::<Symbol<CreatePluginFn>>(b"create_plugin") {
+                            if let Ok(func) = 
+                                lib.get::<Symbol<CreatePluginFn>>(b"create_plugin") {
                                 self.plugins.push(func());
                                 self._libs.push(lib);
                             }
@@ -65,21 +71,39 @@ impl PluginManager {
         )
     }
 
-    pub fn try_decode(&self, path: &Path) -> Result<DynamicImage, String> {
+    /// 画像を ImageContent としてデコード
+    pub fn try_decode(&self, path: &Path) -> Result<Box<dyn ImageContent>, String> {
         let ext = path
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
 
-        // 1. まずはプラグインから検索
+        // 1. WebPは image-webp でデコード
+        if ext == "webp" {
+            return WebpAnimation::load(path)
+                .map(|image| Box::new(image) as Box<dyn ImageContent>)
+                .map_err(|e| e.to_string());
+        }
+
+        // 2. gif
+        if ext == "gif" {
+            return GifAnimation::load(path)
+                .map(|image| Box::new(image) as Box<dyn ImageContent>)
+                .map_err(|e| e.to_string());
+        }
+
+        // 3. プラグインから検索
         for plugin in &self.plugins {
             if plugin.supported_extensions().contains(&ext.as_str()) {
                 return plugin.decode(path);
             }
         }
 
-        // 2. プラグインになければ標準の image クレートで試行 (JPG, PNG など)
-        image::open(path).map_err(|e| e.to_string())
+        // 4. プラグインになければ標準の image クレートで試行 (JPG, PNG など)
+        let image = image::open(path)
+            .map_err(|e| e.to_string())?;
+
+        Ok(Box::new(StaticImage::new(image)))
     }
 }    
