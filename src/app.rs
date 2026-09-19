@@ -47,6 +47,9 @@ impl MyApp {
     }
 
     pub fn refresh_files(&mut self) {
+        // フォルダが変わったので世代を進める
+        self.thumbnail.generation += 1;
+
         if let Ok(entries) = std::fs::read_dir(&self.current_dir) {
             self.files = entries
                 .filter_map(|e| e.ok().map(|e| e.path()))
@@ -75,6 +78,9 @@ impl MyApp {
                 if self.thumbnail.textures.contains_key(path) {
                     continue;
                 }
+                if self.thumbnail.cache.contains(path) {
+                    continue;
+                }
                 if self.thumbnail.loading.contains(path) {
                     continue;
                 }
@@ -82,7 +88,12 @@ impl MyApp {
                     continue;
                 }
 
-                if self.thumbnail.tx.send(path.clone()).is_ok() {
+                let request = crate::app_thumbnail::ThumbnailRequest {
+                    generation: self.thumbnail.generation,
+                    path: path.clone(),
+                };
+
+                if self.thumbnail.tx.send(request).is_ok() {
                     self.thumbnail.loading.insert(path.clone());
                 }
             }

@@ -13,5 +13,6 @@ image-webp = "0.2.4"
 libloading = "0.9.0"
 num-format = "0.4.4"
 rfd = "0.17.2"
+turbojpeg = { version = "1.5.1", features = ["image"] }
 webp-animation = "0.10.0"
 windows-sys = { version = "0.61.2", features = ["Win32_Graphics_Gdi"] }

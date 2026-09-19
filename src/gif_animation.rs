@@ -1,3 +1,4 @@
+//gif_animation
 use std::path::Path;
 use std::time::Duration;
 use image::{AnimationDecoder, Delay, Frame,};

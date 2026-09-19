@@ -64,7 +64,14 @@ impl SubWindow {
         // 拡大率を適用した目標の画像サイズ
         let scaled_image_size = original_size * self.zoom_scale;
 
-        if self.fit_to_screen {
+println!(
+    "fit detail: original={:?}, zoom={}, scaled={:?}",
+    original_size,
+    self.zoom_scale,
+    scaled_image_size
+);
+
+    if self.fit_to_screen {
             // 自動縮小ON: 利用可能な内部描画エリアに合わせて縮小
             let max_image_width = (available_outer_width - decoration.x - (SIDE_MARGIN * 2.0)).max(100.0);
             let max_image_height = (available_outer_height - decoration.y - TOP_MARGIN).max(100.0);
@@ -75,6 +82,14 @@ impl SubWindow {
             // 小さい画像は拡大しない
             let scale = scale_x.min(scale_y).min(1.0);
 
+println!(
+    "fit detail: max={},{} scale_x={} scale_y={} scale={}",
+    max_image_width,
+    max_image_height,
+    scale_x,
+    scale_y,
+    scale
+);            
             // サブウィンドウサイズ
             let window_size = egui::vec2(
                 ((scaled_image_size.x * scale) + SIDE_MARGIN * 2.0)

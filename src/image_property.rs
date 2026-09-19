@@ -1,3 +1,4 @@
+//image_property
 use std::path::Path;
 use std::fs;
 use chrono::{DateTime, Local};

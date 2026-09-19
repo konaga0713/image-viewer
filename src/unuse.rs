@@ -271,3 +271,27 @@ fn main() {
         Some(texture)
     }
 
+
+pub fn load(path: &Path) -> Result<image::RgbaImage, String> {
+    let data = 
+        std::fs::read(path)
+            .map_err(|e| format!("JPEG読み込み失敗: {}", e))?;
+
+    match turbojpeg::decompress_image(&data) {
+        Ok(image) => 
+            Ok(image),
+        Err(turbo_err) => {
+            match image::load_from_memory(&data) {
+                Ok(image) => Ok(image.to_rgba8()),
+                Err(image_err) => Err(
+                    format!("TurboJPEG: {} image : {}",
+                        turbo_err,
+                        image_err)
+                ),
+            }
+        }
+
+    }
+
+}
+

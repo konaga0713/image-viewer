@@ -1,3 +1,4 @@
+///static_image
 use std::path::Path;
 use image::DynamicImage;
 

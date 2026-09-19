@@ -7,7 +7,7 @@ use crate::app::MyApp;
 // サムネイル表示枠
 const THUMBNAIL_FRAME_SIZE: egui::Vec2 = egui::vec2(160.0, 120.0);
 // 1個のサムネイルに必要な幅
-const THUMBNAIL_WIDTH: f32 = 170.0;
+const THUMBNAIL_ITEM_WIDTH: f32 = 170.0;
 
 impl eframe::App for MyApp {
     // --- サブウィンドウの描画・管理 ---
@@ -70,6 +70,8 @@ impl MyApp {
                 if ui.button("フォルダを開く").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         self.current_dir = path;
+                        self.thumbnail.generation += 1;
+                        self.thumbnail.loading.clear();
                         self.refresh_files();
                     }
                 }
@@ -104,20 +106,12 @@ impl MyApp {
             ui.heading("画像");
 
             let available_width = ui.available_width();
-
             // 横に何個並べられるか
-            let columns = ((available_width / THUMBNAIL_WIDTH).floor() as usize).max(1);
+            let columns = ((available_width / THUMBNAIL_ITEM_WIDTH).floor() as usize).max(1);
+
+            let image_files: Vec<PathBuf> = self.get_display_image_files();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                let image_files: Vec<PathBuf> = self
-                    .files
-                    .iter()
-                    .filter(|path| {
-                        path.is_file() && self.plugin_mgr.can_decode(path)
-                    })
-                    .cloned()
-                    .collect();
-
                 for row in image_files.chunks(columns) {
                     ui.horizontal(|ui | {
                         for path in row {
@@ -133,52 +127,44 @@ impl MyApp {
         let selected = self.selected_file.as_ref() == Some(path);
 
         ui.vertical(|ui| {
-            if let Some(texture) = 
-                self.thumbnail.textures.get(path) {
-                    let response = 
-                        ui.vertical(|ui|{
-                            // サムネイル枠
-                            let image_response = 
-                                ui.allocate_ui_with_layout(
-                                    THUMBNAIL_FRAME_SIZE,
-                                    egui::Layout::centered_and_justified(
-                                        egui::Direction::LeftToRight,),
-                                        |ui| {
-                                        ui.add(
-                                            egui::Image::new(texture)
-                                                .fit_to_fraction(egui::vec2(1.0,1.0))
-                                                .sense(egui::Sense::click())
-                                            )
-                                        },    
-                                ).inner;
-
-                            // ファイル名
-                            ui.add_sized(
-                                [160.0, 20.0],
-                                egui::Label::new(
-                                    path.file_name()
-                                        .and_then(|name| name.to_str())
-                                        .unwrap_or("")
+            if let Some(texture) = self.thumbnail.textures.get(path) {
+                // サムネイル枠
+                let image_size = texture.size_vec2();
+                let scale = (THUMBNAIL_FRAME_SIZE.x / image_size.x)
+                    .min(THUMBNAIL_FRAME_SIZE.y / image_size.y)
+                    .min(1.0);
+                let display_size = image_size * scale; 
+                
+                let image_response = 
+                    ui.allocate_ui_with_layout(
+                        THUMBNAIL_FRAME_SIZE,
+                        egui::Layout::centered_and_justified(
+                            egui::Direction::LeftToRight,),
+                            |ui| {
+                                ui.add(
+                                    egui::Image::new(texture)
+                                        .fit_to_exact_size(display_size)
+                                        .sense(egui::Sense::click())
                                 )
-                                .truncate(),
-                            );
+                            },    
+                    ).inner;
 
-                            image_response
-                        }).inner;
-                                    
-                    // シングルクリック
-                    if response.clicked() {
-                        self.selected_file = Some(path.clone());
-                    }
+                // ファイル名
+                Self::show_thumbnail_filename(ui, path);
 
-                    // ダブルクリック
-                    if response.double_clicked() {
-                        self.selected_file = Some(path.clone());
-                        self.open_sub_window(
-                            path.clone(),
-                            &ctx,
-                        );    
-                    }
+                // シングルクリック
+                if image_response.clicked() {
+                    self.selected_file = Some(path.clone());
+                }
+
+                // ダブルクリック
+                if image_response.double_clicked() {
+                    self.selected_file = Some(path.clone());
+                    self.open_sub_window(
+                        path.clone(),
+                        &ctx,
+                    );    
+                }
             } else if self.thumbnail.loading.contains(path) {
                 // 読み込み中
                 ui.allocate_ui(
@@ -199,9 +185,31 @@ impl MyApp {
                         });
                     },
                 );
-
+                Self::show_thumbnail_filename(ui, path);
             }
         });
     }   
+
+    fn get_display_image_files(&self) -> Vec<PathBuf> {
+        self.files
+            .iter()
+            .filter(|path| {
+                path.is_file() && self.plugin_mgr.can_decode(path)
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn show_thumbnail_filename(ui: &mut egui::Ui, path: &PathBuf) {
+        ui.add_sized(
+            [THUMBNAIL_FRAME_SIZE.x, 20.0],
+            egui::Label::new(
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("")
+            )
+            .truncate(),
+        );
+    }
 }
 

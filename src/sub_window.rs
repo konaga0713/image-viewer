@@ -1,9 +1,10 @@
+///sub_window
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::{fs, thread};
 use std::sync::Arc;
+use egui::TextureHandle;
 
-use crate::egui::TextureHandle;
 use crate::plugin::PluginManager;
 use crate::image_content::ImageContent;
 use crate::image_property::ImageProperty;

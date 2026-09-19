@@ -1,4 +1,4 @@
-/// 画像の回転角度
+//image_operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rotation {
     None,       // 0度 

@@ -1,8 +1,10 @@
-use eframe::wgpu::wgc::pipeline::ImplicitLayoutError::Passthrough;
+///plugin
+
 use libloading::{Library, Symbol};
 use std::path::Path;
 
 use crate::image_content::ImageContent;
+use crate::jpeg_loader;
 use crate::static_image::StaticImage;
 use crate::gif_animation::GifAnimation;
 use crate::webp_animation::WebpAnimation;
@@ -73,37 +75,46 @@ impl PluginManager {
 
     /// 画像を ImageContent としてデコード
     pub fn try_decode(&self, path: &Path) -> Result<Box<dyn ImageContent>, String> {
+        // 1. jpegは jpeg_loader でデコード
+        if jpeg_loader::is_jpeg(&path) {
+            return jpeg_loader::load(&path)
+                .map(|image| {
+                    Box::new(StaticImage::new(image::DynamicImage::ImageRgba8(image))) 
+                        as Box<dyn ImageContent>})
+                .map_err(|e| e.to_string());
+        }
+
         let ext = path
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
 
-        // 1. WebPは image-webp でデコード
+        // 2. WebPは image-webp でデコード
         if ext == "webp" {
             return WebpAnimation::load(path)
                 .map(|image| Box::new(image) as Box<dyn ImageContent>)
                 .map_err(|e| e.to_string());
         }
 
-        // 2. gif
+        // 3. gif
         if ext == "gif" {
             return GifAnimation::load(path)
                 .map(|image| Box::new(image) as Box<dyn ImageContent>)
                 .map_err(|e| e.to_string());
         }
 
-        // 3. プラグインから検索
+        // 4. プラグインから検索
         for plugin in &self.plugins {
             if plugin.supported_extensions().contains(&ext.as_str()) {
                 return plugin.decode(path);
             }
         }
 
-        // 4. プラグインになければ標準の image クレートで試行 (JPG, PNG など)
+        // 5. プラグインになければ標準の image クレートで試行 (JPG, PNG など)
         let image = image::open(path)
             .map_err(|e| e.to_string())?;
 
         Ok(Box::new(StaticImage::new(image)))
     }
-}    
+}

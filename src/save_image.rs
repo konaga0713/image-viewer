@@ -1,3 +1,4 @@
+///save_image
 use std::path::Path;
 use image::{DynamicImage, ImageError};
 use crate::image_operation::Rotation;
