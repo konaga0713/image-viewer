@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::time::Duration;
+use image::DynamicImage::ImageRgba8;
 use image::RgbaImage;
 use std::io::Cursor;
 use image_webp::WebPDecoder;
@@ -45,34 +46,7 @@ impl WebpAnimation {
             decoder.read_image(&mut decoded)?;
 
             let image = 
-                if has_alpha {
-                    if decoded.len() != (width * height * 4) as usize {
-                        return Err( "Unexpected WebP RGBA buffer size".into());
-                    }
-
-                    RgbaImage::from_raw(
-                        width, 
-                        height,
-                        decoded,)
-                        .ok_or("WebP画像の作成に失敗しました")?
-                } else {
-                    if decoded.len() != (width * height * 3) as usize {
-                        return Err( "Unexpected WebP RGB buffer size".into());
-                    }
-
-                    let mut rgba = 
-                        RgbaImage::new(width, height);
-
-                    for (src, dst) in decoded
-                        .chunks_exact(3)
-                        .zip(rgba.chunks_exact_mut(4)) {
-                            dst[0] = src[0];
-                            dst[1] = src[1];
-                            dst[2] = src[2];
-                            dst[3] = 255;
-                    }
-                    rgba
-                };
+                create_rgba_image(width, height, decoded)?;
 
             return Ok(Self {
                 frames: vec![image],
@@ -99,21 +73,14 @@ impl WebpAnimation {
 
         for _ in 0..frame_count {
             let mut decoded = vec![0u8; output_size];
-            
             let delay_ms = decoder.read_frame(&mut decoded)?;
-            let image = RgbaImage::from_raw(
-                width, height, decoded,)
-                .ok_or("WebPフレーム画像の作成に失敗しました")?;
+
+            let image = 
+                create_rgba_image(width,height, decoded)?;
 
             images.push(image);
             delays.push(Duration::from_millis(delay_ms as u64));
         } 
-
-println!(
-        "WebP loaded: frames={}, delays={:?}",
-        images.len(),
-        delays
-    );
 
         Ok(Self { frames: images, delays, current_frame: 0, rotation: Rotation::None, })
         
@@ -294,3 +261,39 @@ impl ImageContent for WebpAnimation {
     }
 
 }
+
+
+fn create_rgba_image(
+    width: u32,
+    height: u32,
+    decoded: Vec<u8>,
+) -> Result<RgbaImage, Box<dyn std::error::Error>> {
+    let pixels = width as usize * height as usize;
+
+    let len = decoded.len();
+    if len == (pixels * 4) {
+        RgbaImage::from_raw(
+            width, 
+            height,
+            decoded)
+            .ok_or_else(|| "WebP画像の作成に失敗しました".into())
+    } else if len == (pixels * 3) {
+        let mut rgba = Vec::with_capacity(pixels * 4);
+
+        for rgb in decoded.chunks_exact(3) {
+            rgba.push(rgb[0]);
+            rgba.push(rgb[1]);
+            rgba.push(rgb[2]);
+            rgba.push(255);
+        }
+        RgbaImage::from_raw(width, height, rgba)
+            .ok_or_else(|| "RGB→RGBA変換に失敗しました".into())
+    } else {
+        return Err(format!(
+                "Unexpected buffer size: {} (expected {} or {})",
+                decoded.len(),
+                pixels * 3,
+                pixels * 4
+                ).into());
+    }                        
+}         
