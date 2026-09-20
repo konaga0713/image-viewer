@@ -43,8 +43,14 @@ impl SubWindow {
                 .filter_map(|entry| entry.ok().map(|entry| entry.path()))
                 .filter(|pb| pb.is_dir())
                 .collect();
-            subdirs.sort();
+            subdirs.sort_by_key(|p| {
+                p.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase()
+            });
         }
+
         subdirs
     }
 
@@ -131,7 +137,7 @@ impl SubWindow {
 
             // 現在フォルダより前にある兄弟フォルダを探す
             for target_dir in sibling_dirs.iter().take(index).rev() {
-                if Self::get_image_files(target_dir, plugin_mgr).is_empty() {
+                if !Self::has_image_directory(target_dir, plugin_mgr) {
                     continue;
                 } else {
                     return Some(Self::last_directory(target_dir, plugin_mgr));
@@ -191,5 +197,21 @@ impl SubWindow {
 
         None
     }    
+
+    fn has_image_directory(dir: &PathBuf, plugin_mgr: &Arc<PluginManager>,
+    ) -> bool {
+        if !Self::get_image_files(dir, plugin_mgr).is_empty() {
+            return true;
+        }
+
+        for sub in Self::get_subdirectories(dir) {
+            if Self::has_image_directory(&sub, plugin_mgr) {
+                return true;
+            }
+        }
+
+        false
+    }
+
 
 }

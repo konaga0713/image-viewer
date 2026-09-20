@@ -15,4 +15,5 @@ num-format = "0.4.4"
 rfd = "0.17.2"
 turbojpeg = { version = "1.5.1", features = ["image"] }
 webp-animation = "0.10.0"
+windows = "0.62.2"
 windows-sys = { version = "0.61.2", features = ["Win32_Graphics_Gdi"] }
