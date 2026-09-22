@@ -1,12 +1,14 @@
 //app
 use eframe::egui;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 use crate::app_thumbnail::ThumbnailState;
+use crate::image_cache::ImageCache;
 use crate::plugin::PluginManager;
 use crate::sub_window::SubWindow;
 
+const IMAGE_CACHE_CAPACITY: usize = 20;
 pub struct MyApp {
     pub current_dir: PathBuf,
     pub files: Vec<PathBuf>,
@@ -16,6 +18,9 @@ pub struct MyApp {
     pub auto_fit_option: bool,
     //サムネイル情報
     pub thumbnail: ThumbnailState,
+    //サブウィンドウ用
+    pub image_cache: ImageCache,
+
 }
 
 impl MyApp {
@@ -40,6 +45,7 @@ impl MyApp {
             plugin_mgr: Arc::new(plugin_mgr),
             auto_fit_option: true,
             thumbnail,
+            image_cache: ImageCache::new(IMAGE_CACHE_CAPACITY),
         };
 
         app.refresh_files();
@@ -47,8 +53,11 @@ impl MyApp {
     }
 
     pub fn refresh_files(&mut self) {
+        // フォルダ変更時はサムネイル一覧を先頭へ戻す
+        self.thumbnail.scroll_to_top = true;        
         // フォルダが変わったので世代を進める
         self.thumbnail.generation += 1;
+        self.thumbnail.current_generation.store(self.thumbnail.generation, Ordering::Relaxed);
 
         if let Ok(entries) = std::fs::read_dir(&self.current_dir) {
             self.files = entries
@@ -104,7 +113,7 @@ impl MyApp {
     pub fn open_sub_window(&mut self, path: PathBuf, ctx: &egui::Context,) {
         // メイン画面で画像を選択するたびに、新しいサブ画面を作成
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
-        self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(),));
+        self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(), &mut self.image_cache));
     }
 
     pub fn show_folder_tree(

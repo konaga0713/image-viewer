@@ -3,6 +3,8 @@ mod app;
 mod app_thumbnail;
 mod app_ui;
 mod gif_animation;
+mod gif_worker;
+mod image_cache;
 mod image_content;
 mod image_operation;
 mod image_property;

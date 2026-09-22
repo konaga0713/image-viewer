@@ -58,8 +58,8 @@ impl SubWindow {
         let position = outer_rect.min;
         // タスクバーを除いた使用可能領域から
         // 現在位置より右・下に残っている領域を取得
-        let available_outer_width = (work_rect.max.x - position.x).max(100.0);
-        let available_outer_height = (work_rect.max.y - position.y).max(100.0);
+        let available_outer_width = (work_rect.max.x - position.x).max(0.0);
+        let available_outer_height = (work_rect.max.y - position.y).max(0.0);
 
         // 拡大率を適用した目標の画像サイズ
         let scaled_image_size = original_size * self.zoom_scale;
@@ -72,15 +72,15 @@ println!(
 );
 
     if self.fit_to_screen {
-            // 自動縮小ON: 利用可能な内部描画エリアに合わせて縮小
-            let max_image_width = (available_outer_width - decoration.x - (SIDE_MARGIN * 2.0)).max(100.0);
-            let max_image_height = (available_outer_height - decoration.y - TOP_MARGIN).max(100.0);
-            
-            let scale_x = max_image_width / scaled_image_size.x;
-            let scale_y = max_image_height / scaled_image_size.y;
+        // 自動縮小ON: 利用可能な内部描画エリアに合わせて縮小
+        let max_image_width = (available_outer_width - decoration.x - (SIDE_MARGIN * 2.0)).max(0.0);
+        let max_image_height = (available_outer_height - decoration.y - TOP_MARGIN).max(0.0);
+        
+        let scale_x = max_image_width / scaled_image_size.x;
+        let scale_y = max_image_height / scaled_image_size.y;
 
-            // 小さい画像は拡大しない
-            let scale = scale_x.min(scale_y).min(1.0);
+        // 小さい画像は拡大しない
+        let scale = scale_x.min(scale_y).min(1.0);
 
 println!(
     "fit detail: max={},{} scale_x={} scale_y={} scale={}",
@@ -90,20 +90,20 @@ println!(
     scale_y,
     scale
 );            
-            // サブウィンドウサイズ
-            let window_size = egui::vec2(
-                ((scaled_image_size.x * scale) + SIDE_MARGIN * 2.0)
-                    .max(MIN_DISPLAY_WIDTH),
-                ((scaled_image_size.y * scale) + TOP_MARGIN)
-                    .max(MIN_DISPLAY_HEIGHT),
-            );
-        println!(
-            "fit: available={},{} window={},{}",
-            available_outer_width,
-            available_outer_height,
-            window_size.x,
-            window_size.y
+        // サブウィンドウサイズ
+        let window_size = egui::vec2(
+            ((scaled_image_size.x * scale) + SIDE_MARGIN * 2.0)
+                .max(MIN_DISPLAY_WIDTH),
+            ((scaled_image_size.y * scale) + TOP_MARGIN)
+                .max(MIN_DISPLAY_HEIGHT),
         );
+println!(
+    "fit: available={},{} window={},{}",
+    available_outer_width,
+    available_outer_height,
+    window_size.x,
+    window_size.y
+);
             // ウィンドウサイズ変更
             ctx.send_viewport_cmd(
             egui::ViewportCommand::InnerSize(window_size),  

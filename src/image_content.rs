@@ -14,7 +14,7 @@ pub enum ImageContentType {
 }
 pub trait ImageContent: Send {
     /// 現在表示すべき画像をRGBA形式で取得
-    fn current_image(&self) -> image::RgbaImage;
+    fn current_image(&self) -> &image::RgbaImage;
     /// 現在の画像サイズ
     fn size(&self) ->  egui::Vec2;
 
@@ -43,5 +43,19 @@ pub trait ImageContent: Send {
     ///　保存
     fn save(&self, path: &Path) -> Result<(), String>; 
 
+    /// ロード中
+    fn process_loading(&mut self) -> bool {
+        false
+    }
+
+    /// loading状態
+    fn is_loading(&self) -> bool {
+        false
+    }
+
+    fn update_loading(&mut self) -> bool {
+        false
+    }
+    
 }
 

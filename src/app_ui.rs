@@ -29,7 +29,6 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
-
     fn show_sub_windows(&mut self, ctx: &egui::Context) {
 
         self.sub_windows.retain_mut(|sub_win| {
@@ -42,17 +41,18 @@ impl MyApp {
                 .unwrap_or_default()
                 .to_string_lossy();    
 
+            let viewport_builder = egui::ViewportBuilder::default()
+                .with_title(format!("Sub Window - {}", filename));
+            
             ctx.show_viewport_immediate(
                 sub_win.id,
-                egui::ViewportBuilder::default()
-                    .with_title(format!("Sub Window - {}", filename))
-                    .with_inner_size([800.0, 600.0]),
+                viewport_builder,
                 |sub_ui, class| {
                     if class == egui::ViewportClass::EmbeddedWindow {
                         return;
                     }
 
-                    sub_win.ui(sub_ui, &self.plugin_mgr);
+                    sub_win.ui(sub_ui, &self.plugin_mgr, &mut self.image_cache);
                     if sub_ui.ctx().input(|i| i.viewport().close_requested()) {
                         keep_open = false;
                     }
@@ -110,8 +110,12 @@ impl MyApp {
             let columns = ((available_width / THUMBNAIL_ITEM_WIDTH).floor() as usize).max(1);
 
             let image_files: Vec<PathBuf> = self.get_display_image_files();
+            let scroll_to_top = self.thumbnail.scroll_to_top;
 
             egui::ScrollArea::vertical().show(ui, |ui| {
+                if scroll_to_top {
+                    ui.scroll_to_cursor(Some(egui::Align::TOP));
+                }
                 for row in image_files.chunks(columns) {
                     ui.horizontal(|ui | {
                         for path in row {
@@ -120,6 +124,10 @@ impl MyApp {
                     });
                 }
             });
+
+            if scroll_to_top {
+                self.thumbnail.scroll_to_top = false;
+            }
         });
     }
 
@@ -211,5 +219,5 @@ impl MyApp {
             .truncate(),
         );
     }
-}
 
+}

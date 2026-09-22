@@ -1,14 +1,18 @@
 ///sub_window
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::{fs, thread};
+use std::thread;
 use std::sync::Arc;
 use egui::TextureHandle;
 
+use crate::static_image::StaticImage;
+use crate::gif_animation::GifAnimation;
 use crate::plugin::PluginManager;
 use crate::image_content::ImageContent;
 use crate::image_property::ImageProperty;
+use crate::image_cache::ImageCache;
 
+const MIN_FIT_SCALE: f32 = 0.8;
 pub struct SubWindow {
     pub id: egui::ViewportId,
     pub current_path: PathBuf,
@@ -29,6 +33,7 @@ pub struct SubWindow {
     // スレッド間通信用チャンネル
     pub tx: Sender<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
     pub rx: Receiver<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
+
 }
 
 impl SubWindow {
@@ -38,6 +43,7 @@ impl SubWindow {
         fit_to_screen: bool, 
         plugin_mgr: Arc<PluginManager>,
         ctx: &egui::Context,
+        image_cache: &mut ImageCache,
     ) -> Self {
         let (tx, rx) = channel();
 
@@ -71,14 +77,46 @@ impl SubWindow {
             rx,
         };
 
-        sub_window.load_async(plugin_mgr.clone(), ctx.clone(),);
+        sub_window.load_async(plugin_mgr.clone(), image_cache, ctx.clone(),);
 
         sub_window 
     }
 
     /// 画像のデコード処理を別スレッドで実行する
-    pub(crate) fn load_async(&mut self, plugin_mgr: Arc<crate::plugin::PluginManager>, ctx: egui::Context,) {
+    pub(crate) fn load_async(&mut self, plugin_mgr: Arc<crate::plugin::PluginManager>, image_cache: &mut ImageCache, ctx: egui::Context,) {
         self.loading = true;
+
+        if self.is_gif() {
+            let gif = GifAnimation::load_async(
+                self.current_path.clone(),
+                ctx.clone(),
+            );
+
+            self.image = Some(Box::new(gif));
+
+            self.texture = None;
+            self.animation_next_frame_time = None;
+
+            return;
+        }
+        
+        // Cache検索
+        if let Some(rgba) = image_cache.get(&self.current_path).cloned() {
+            let image = StaticImage::new(
+                image::DynamicImage::ImageRgba8(rgba)
+            );
+            self.image = Some(Box::new(image));
+            self.texture = None;
+            self.loading = false;
+
+            return;
+        }
+
+        self.load_normal_async(plugin_mgr, ctx);
+
+    }
+
+    fn load_normal_async(&mut self, plugin_mgr: Arc<PluginManager>,ctx: egui::Context,){
         let path = self.current_path.clone();
         let tx = self.tx.clone();
 
@@ -94,8 +132,6 @@ impl SubWindow {
         });
     }
 
-    //fn resize_for_display(&mut self, max_dim: u32);
-
     fn is_gif(&self) -> bool {
         self.current_path
             .extension()
@@ -108,268 +144,34 @@ impl SubWindow {
         &mut self, 
         ui: &mut egui::Ui,
         plugin_mgr: &Arc<crate::plugin::PluginManager>,
+        image_cache: &mut ImageCache,     
     )  {
         let ctx = ui.ctx().clone();
 
-        // 画像の読み込み処理
-        while let Ok((loaded_path, result)) = self.rx.try_recv() {
-            if loaded_path != self.current_path {
-                continue;
-            }
+        // 画像読込結果
+        self.process_image_loading(&ctx, image_cache);
 
-            self.loading = false;
-
-            match result {
-                Ok(image) => {
-                    self.original_image_size = Some(image.size());
-                    self.resize_window_to_image(&ctx);    //ウィンドウサイズを画面に合わせる
-
-                    let rgba = image.current_image();
-                    let size = [
-                        rgba.width() as usize,
-                        rgba.height() as usize,
-                    ];
-                    let color_image =
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            size,
-                            rgba.as_raw(),
-                    );
-                
-                    self.texture = 
-                        Some(ctx.load_texture(
-                            self.current_path.to_string_lossy(),
-                            color_image,
-                            Default::default(),
-                        )
-                    );
-                    self.image = Some(image);
-                } 
-
-                Err(err_msg) => {
-                    eprintln!("Failed to load image: {}", err_msg);
-                    self.texture = None;
-                    self.image = None; 
-                }
-            }
-        }
-        // ============================================================
         // キーボード操作
-        //
-        // ← 前の画像
-        // → 次の画像
-        // ↑ 前のフォルダ
-        // ↓ 次のフォルダ
-        // ctrl + ← 左回転
-        // ctrl + → 右回転
-        // ctrl + s 画像保存
-        // ============================================================
+        self.handle_keyboard(&ctx, plugin_mgr, image_cache);
 
-        let ctrl = ctx.input(|i| i.modifiers.ctrl);
-        let right = ctx.input(|i| i.key_pressed(egui::Key::ArrowRight));
-        let left = ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft));
-        let up = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
-        let down = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
-        let key_t = ctx.input(|i| i.key_pressed(egui::Key::T));
-        let key_b = ctx.input(|i| i.key_pressed(egui::Key::B));
+        // 上部メニュー
+        self.show_top_panel(ui, &ctx, plugin_mgr, image_cache);
 
-        match(ctrl, left, right) {
-            (true, true, false) => self.do_rotate_left(&ctx),          // ctrl + ← 左回転
-            (true, false, true) => self.do_rotate_right(&ctx),     // ctrl + → 右回転
-            (false,true,false)=> self.previous_image(&ctx,plugin_mgr),   // ← 前の画像
-            (false,false,true)=> self.next_image(&ctx,plugin_mgr), // → 次の画像
-            _ => {}
-        }
+        // 画像表示
+        self.show_image_area(ui, &ctx);
 
-        match(ctrl, key_t, key_b) {
-            (true, true, false) => self.move_to_image(0, &ctx, plugin_mgr),          // ctrl + T top画像 
-            (true, false, true) => {                    
-                // ctrl + B Bottom画像
-                if !self.directory_files.is_empty() {
-                    let last = self.directory_files.len()-1;
-                    self.move_to_image(last, &ctx, plugin_mgr);
-                }
-            }     
-            _ => {}
-        }
+        // プロパティ
+        self.show_property(&ctx);
 
-        match(up,down) {
-            (true,false) => self.move_to_previous_directory(&ctx, plugin_mgr),  // ↑ 前のフォルダ
-            (false,true) => self.move_to_next_directory(&ctx,plugin_mgr),   // ↓ 次のフォルダ
-            _ => {}
-        }
-
-        // ------------------------------------------------------------
-        // ctrl + s 画像保存
-        // ------------------------------------------------------------
-        if ctrl && ctx.input(|i| i.key_pressed(egui::Key::S)) {
-            println!("ctrl + s pressed");
-
-            self.request_save();
-       }
-
-        // UIの描画
-        egui::Panel::top("sub_top_panel").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut self.fit_to_screen, "画面に合わせて自動縮小");
-                ui.label(format!("拡大率: {:.0}%", self.zoom_scale * 100.0));
-                if ui.button("リセット").clicked() {
-                    self.zoom_scale = 1.0;
-                }
-                ui.label(format!(" ( {} / {} )", self.image_index + 1, self.directory_files.len()));
-
-                if self.loading {
-                    ui.spinner();
-                    ui.label("Loading...");
-                }    
-            });
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("画像", |ui| {
-                    if ui.button("左回転 ctrl + ←").clicked() {
-                        self.do_rotate_left(&ctx);
-                        ui.close();
-                    }
-                    if ui.button("右回転 ctrl + →").clicked() {
-                        self.do_rotate_right(&ctx);
-                        ui.close();
-                    }
-                    if ui.button("Top画像 ctrl + t").clicked() {
-                        self.move_to_image(0, &ctx, plugin_mgr);
-                        ui.close();
-                    }
-                    if ui.button("Bottom画像 ctrl + b").clicked() {
-                        if !self.directory_files.is_empty() {
-                            let last = self.directory_files.len()-1;
-                            self.move_to_image(last, &ctx, plugin_mgr);
-                        }
-                        ui.close();
-                    }
-                    ui.separator();
-
-                    if ui.button("画像保存 ctrl + s").clicked() {
-                        println!("画像保存");
-
-                        self.request_save();
-                        ui.close();
-                    }
-
-                    if ui.button("プロパティ").clicked() {
-                        self.show_property = true;
-                        ui.close();
-                    }
-
-                });
-            })
-        });
-
-        // 画像表示エリア（原寸・自動縮小・左上基準）
-        egui::CentralPanel::default().show(ui, |ui| {
-            if let Some(texture) = &self.texture {
-                let image_size = texture.size_vec2() * self.zoom_scale;
-
-                let display_size = if self.fit_to_screen {
-                    let available_size = ui.available_size();
-                    let scale_x = available_size.x / image_size.x;
-                    let scale_y = available_size.y / image_size.y;
-                    // 1.0を上限にするので、小さい画像は拡大しない
-                    let scale = scale_x.min(scale_y).min(1.9);
-                    image_size * scale
-                } else {
-                    image_size  // 自動縮小OFFの場合は原寸表示
-                };
-
-                // スクロールエリアを配置し、基準を左上に設定
-                egui::ScrollArea::both()
-                    .auto_shrink([false; 2])
-                    .show(ui, |ui|{
-                        ui.add(
-                            egui::Image::new(texture)
-                                .fit_to_exact_size(display_size)
-                        );
-                    }); 
-                   
-            }
-
-            //animation 更新処理
-            if let Some(image) = &mut self.image {
-                if image.is_animated() {
-                    // アニメーション開始時に次フレームの表示時刻を設定
-                    if self.animation_next_frame_time.is_none() {
-                        if let Some(delay) = image.current_delay(){
-                            self.animation_next_frame_time = 
-                                Some(std::time::Instant::now() + delay);
-                        }
-                    }
-                    let now = std::time::Instant::now();
-                    // 次フレームの時刻になったらフレームを進める
-                    if let Some(next_time) = self.animation_next_frame_time {
-                        if now >= next_time {
-                            if let Some(delay) = image.next_frame() {
-                                self.animation_next_frame_time = Some(now + delay);
-                            }
-                        }
-                    }
-                    // 次フレームの時刻まで再描画を待つ
-                    if let Some(next_time) =self.animation_next_frame_time{
-                        ctx.request_repaint_after(
-                            next_time.saturating_duration_since(now));
-                    }
-                    // 現在フレームをテクスチャへ反映
-                    let rgba = image.current_image();
-                    let size =[
-                        rgba.width() as usize,
-                        rgba.height() as usize, 
-                    ];
-                    let color_image =
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            size,
-                            rgba.as_raw(),
-                        );
-
-                    self.texture = Some(
-                        ctx.load_texture(
-                            self.current_path.to_string_lossy(),
-                            color_image,
-                            Default::default(),
-                        )
-                    );                   
-                }
-            }
-        });
-
-        // プロパティ表示
-        if self.show_property {
-            ImageProperty::show(
-                &ctx,
-                &self.current_path,
-                &mut self.show_property,
-            );
-        }
-
-        if self.show_save_confirm { 
-            egui::Window::new("画像保存の確認")
-                .collapsible(false)
-                .resizable(false)
-                .show(&ctx, |ui| {
-                    ui.label("この画像を保存しますか？");
-                    ui.horizontal(|ui| {
-                        if ui.button("保存").clicked() {
-                            self.save_current_image();
-                            self.show_save_confirm = false;
-                        }
-                        if ui.button("キャンセル").clicked() {
-                            self.show_save_confirm =false;
-                        }
-                    });
-                });
-        }
-
-
+        // 保存確認
+        self.show_save_confirm(&ctx);
+        
     }
 
     // ------------------------------------------------------------
     // 画像の移動
     // ------------------------------------------------------------
-    fn move_to_image(&mut self, index: usize, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>,) {
+    fn move_to_image(&mut self, index: usize, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
         if index >= self.directory_files.len(){
             return;
         }
@@ -386,18 +188,19 @@ impl SubWindow {
             self.loading = true;
             self.animation_next_frame_time = None;
             // 新しい画像を非同期で読み込む
-            self.load_async(plugin_mgr.clone(), ctx.clone(),);
+            self.load_async(plugin_mgr.clone(), image_cache, ctx.clone(),);
     }
 
     // ------------------------------------------------------------
     // ← 前の画像
     // ------------------------------------------------------------
-    fn previous_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {            
+    fn previous_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache,) {            
         if self.image_index > 0 {
             self.move_to_image(
                 self.image_index - 1,
                 ctx,
-                plugin_mgr,    
+                plugin_mgr,  
+                image_cache,
             );
         }
     }
@@ -405,12 +208,13 @@ impl SubWindow {
     // ------------------------------------------------------------
     // → 次の画像
     // ------------------------------------------------------------  
-    fn next_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {
+    fn next_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
         if self.image_index + 1 < self.directory_files.len() {
             self.move_to_image(
                 self.image_index + 1,
                 ctx,
-                plugin_mgr,    
+                plugin_mgr,
+                image_cache,    
             );
         }
     }
@@ -418,7 +222,7 @@ impl SubWindow {
     // ------------------------------------------------------------
     // ↑ 前のフォルダ
     // ------------------------------------------------------------
-    fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {
+    fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
         println!("===== ArrowUp pressed =====");
         println!("current_path = {:?}", self.current_path);
         println!("history = {:?}", self.folder_history);
@@ -428,11 +232,11 @@ impl SubWindow {
         // ------------------------------------------------
         if let Some(previous_dir) = self.folder_history.pop() {
             println!("HISTORY = {:?}", previous_dir);
-            self.change_directory(previous_dir, &ctx, plugin_mgr);
+            self.change_directory(previous_dir, &ctx, plugin_mgr, image_cache);
             return;
         } else if let Some(new_dir) = self.previous_directory(plugin_mgr) {
             println!("TREE PREV = {:?}", new_dir);
-            self.change_directory(new_dir, &ctx, plugin_mgr);
+            self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
         } else {
             println!("PREV = None");
         }
@@ -441,7 +245,7 @@ impl SubWindow {
     // ------------------------------------------------------------
     // ↓ 次のフォルダ
     // ------------------------------------------------------------
-    fn move_to_next_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>) {
+    fn move_to_next_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
         println!("===== ArrowDown pressed =====");
         println!("current_path = {:?}", self.current_path);
 
@@ -453,7 +257,7 @@ impl SubWindow {
             }
             println!("history = {:?}", self.folder_history);                
 
-            self.change_directory(new_dir, &ctx, plugin_mgr);
+            self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
         } else {
             println!("NEXT = None");
         }
@@ -562,4 +366,390 @@ impl SubWindow {
             self.show_save_confirm = true;
         }    
     } 
+    // ============================================================
+    // 画像の読み込み処理
+    // ============================================================
+    fn process_image_loading(&mut self, ctx: &egui::Context, image_cache: &mut ImageCache,) {
+        // GIFなど、ImageContent内部の非同期読み込み
+        let mut gif_changed = false;
+
+        if let Some(image) = &mut self.image {
+            gif_changed = image.update_loading();
+            self.loading = image.is_loading();
+        }
+
+        if gif_changed {
+            println!("[SubWindow] GIF image changed");            
+            if let Some(image) = &self.image {
+                let rgba = image.current_image();
+
+                let size = [
+                    rgba.width() as usize,
+                    rgba.height() as usize,
+                ];
+                let color_image =
+                    egui::ColorImage::from_rgba_unmultiplied(
+                        size,
+                         rgba.as_raw()
+                    );
+                self.texture = Some(ctx.load_texture(
+                    self.current_path.to_string_lossy(),
+                    color_image,
+                    Default::default(),
+                    ));    
+
+                if self.original_image_size.is_none(){
+                    let image_size = image.size();                    println!(
+                    
+                    "[SubWindow] first frame: {}x{}",
+                        image_size.x,
+                        image_size.y
+                    );
+                    self.original_image_size = Some(image.size());
+                    self.resize_window_to_image(ctx);
+                }
+
+                ctx.request_repaint();
+            }
+        }
+
+        // 通常画像のworker結果
+        while let Ok((loaded_path, result)) = self.rx.try_recv() {
+            if loaded_path != self.current_path {
+                continue;
+            }
+
+            self.loading = false;
+
+            match result {
+                Ok(image) => {
+                    self.original_image_size = Some(image.size());
+                    self.resize_window_to_image(&ctx);    //ウィンドウサイズを画面に合わせる
+
+                    let rgba = image.current_image();
+
+                    // Static画像をCacheへ保存
+                    image_cache.insert(
+                        loaded_path.clone(),
+                        rgba.clone(),
+                    );
+
+                    let size = [
+                        rgba.width() as usize,
+                        rgba.height() as usize,
+                    ];
+                    let color_image =
+                        egui::ColorImage::from_rgba_unmultiplied(
+                            size,
+                            rgba.as_raw(),
+                    );
+                
+                    self.texture = 
+                        Some(ctx.load_texture(
+                            self.current_path.to_string_lossy(),
+                            color_image,
+                            Default::default(),
+                        )
+                    );
+                    self.image = Some(image);
+
+                } 
+
+                Err(err_msg) => {
+                    eprintln!("Failed to load image: {}", err_msg);
+                    self.texture = None;
+                    self.image = None; 
+                }
+            }
+        }
+
+    } 
+
+    // ============================================================
+    // キーボード操作
+    //
+    // ← 前の画像
+    // → 次の画像
+    // ↑ 前のフォルダ
+    // ↓ 次のフォルダ
+    // ctrl + ← 左回転
+    // ctrl + → 右回転
+    // ctrl + s 画像保存
+    // ============================================================
+
+    fn handle_keyboard(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache,) {
+
+        let ctrl = ctx.input(|i| i.modifiers.ctrl);
+        let right = ctx.input(|i| i.key_pressed(egui::Key::ArrowRight));
+        let left = ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft));
+        let up = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
+        let down = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
+        let key_t = ctx.input(|i| i.key_pressed(egui::Key::T));
+        let key_b = ctx.input(|i| i.key_pressed(egui::Key::B));
+
+        match(ctrl, left, right) {
+            (true, true, false) => self.do_rotate_left(&ctx),          // ctrl + ← 左回転
+            (true, false, true) => self.do_rotate_right(&ctx),     // ctrl + → 右回転
+            (false,true,false)=> self.previous_image(&ctx,plugin_mgr, image_cache,),   // ← 前の画像
+            (false,false,true)=> self.next_image(&ctx,plugin_mgr, image_cache,), // → 次の画像
+            _ => {}
+        }
+
+        match(ctrl, key_t, key_b) {
+            (true, true, false) => self.move_to_image(0, &ctx, plugin_mgr, image_cache,),          // ctrl + T top画像 
+            (true, false, true) => {                    
+                // ctrl + B Bottom画像
+                if !self.directory_files.is_empty() {
+                    let last = self.directory_files.len()-1;
+                    self.move_to_image(last, &ctx, plugin_mgr, image_cache,);
+                }
+            }     
+            _ => {}
+        }
+
+        match(up,down) {
+            (true,false) => self.move_to_previous_directory(&ctx, plugin_mgr, image_cache),  // ↑ 前のフォルダ
+            (false,true) => self.move_to_next_directory(&ctx,plugin_mgr, image_cache),   // ↓ 次のフォルダ
+            _ => {}
+        }
+
+        // ------------------------------------------------------------
+        // ctrl + s 画像保存
+        // ------------------------------------------------------------
+        if ctrl && ctx.input(|i| i.key_pressed(egui::Key::S)) {
+            println!("ctrl + s pressed");
+
+            self.request_save();
+        }
+    }
+
+    // ------------------------------------------------------------
+    // TOP画面
+    // ------------------------------------------------------------
+    fn show_top_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        egui::Panel::top("sub_top_panel").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.fit_to_screen, "画面に合わせて自動縮小");
+                ui.label(format!("拡大率: {:.0}%", self.zoom_scale * 100.0));
+                if ui.button("リセット").clicked() {
+                    self.zoom_scale = 1.0;
+                }
+                ui.label(format!(" ( {} / {} )", self.image_index + 1, self.directory_files.len()));
+
+                if self.loading {
+                    ui.spinner();
+                    ui.label("Loading...");
+                }    
+            });
+            self.show_image_menu(ui, ctx, plugin_mgr, image_cache);
+        });
+    }
+
+    // ------------------------------------------------------------
+    // メニュー画面
+    // ------------------------------------------------------------
+    fn show_image_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("画像", |ui| {
+                if ui.button("左回転 ctrl + ←").clicked() {
+                    self.do_rotate_left(&ctx);
+                    ui.close();
+                }
+                if ui.button("右回転 ctrl + →").clicked() {
+                    self.do_rotate_right(&ctx);
+                    ui.close();
+                }
+                if ui.button("Top画像 ctrl + t").clicked() {
+                    self.move_to_image(0, &ctx, plugin_mgr, image_cache,);
+                    ui.close();
+                }
+                if ui.button("Bottom画像 ctrl + b").clicked() {
+                    if !self.directory_files.is_empty() {
+                        let last = self.directory_files.len()-1;
+                        self.move_to_image(last, &ctx, plugin_mgr, image_cache,);
+                    }
+                    ui.close();
+                }
+                ui.separator();
+
+                if ui.button("画像保存 ctrl + s").clicked() {
+                    println!("画像保存");
+
+                    self.request_save();
+                    ui.close();
+                }
+
+                if ui.button("プロパティ").clicked() {
+                    self.show_property = true;
+                    ui.close();
+                }
+
+            });
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 画像表示エリア（原寸・自動縮小・左上基準）
+    // ------------------------------------------------------------
+    fn show_image_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,) {
+        egui::CentralPanel::default().show(ui, |ui| {
+            self.show_texture(ui);
+            self.update_animation(ctx);
+        });
+    }
+
+    // ------------------------------------------------------------
+    // 画像表示
+    // ------------------------------------------------------------
+    fn show_texture(&self, ui: &mut egui::Ui,) {
+
+        let Some(texture) = &self.texture 
+        else {
+            return;
+        };
+
+
+        let image_size = texture.size_vec2() * self.zoom_scale;
+
+        let display_size = if self.fit_to_screen {
+            let available_size = ui.available_size();
+
+
+            let scale_x = available_size.x / image_size.x;
+            let scale_y = available_size.y / image_size.y;
+            // 1.0を上限にするので、小さい画像は拡大しない
+            let scale = if scale_x.min(scale_y) >= MIN_FIT_SCALE {
+                1.0
+            } else {
+                scale_x.min(scale_y).min(1.0)
+            };
+
+println!(
+    "[IMAGE] texture={}x{}, available={}x{}, scale={}",
+    texture.size()[0],
+    texture.size()[1],
+    available_size.x,
+    available_size.y,
+    scale,
+);
+
+            image_size * scale
+        } else {
+            image_size  // 自動縮小OFFの場合は原寸表示
+        };
+
+        // スクロールエリアを配置し、基準を左上に設定
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui|{
+                ui.add(
+                    egui::Image::new(texture)
+                        .fit_to_exact_size(display_size)
+                );
+            }); 
+            
+    }
+
+    // ------------------------------------------------------------
+    //animation 更新処理
+    // ------------------------------------------------------------
+    fn update_animation(&mut self, ctx: &egui::Context,) {
+        let Some(image) = &mut self.image 
+        else {
+            return;
+        };
+
+        if !image.is_animated() {
+            return;
+        }
+
+        // アニメーション開始時に次フレームの表示時刻を設定
+        if self.animation_next_frame_time.is_none() {
+            if let Some(delay) = image.current_delay(){
+                self.animation_next_frame_time = 
+                    Some(std::time::Instant::now() + delay);
+            }
+        }
+
+        let now = std::time::Instant::now();
+        // 次フレームの時刻になったらフレームを進める
+        if let Some(next_time) = self.animation_next_frame_time {
+            if now >= next_time {
+                if let Some(delay) = image.next_frame() {
+                    self.animation_next_frame_time = Some(now + delay);
+                } else {
+                    self.animation_next_frame_time = None;
+                }
+            }
+        }
+
+        // 次フレームの時刻まで再描画を待つ
+        if let Some(next_time) =self.animation_next_frame_time{
+            ctx.request_repaint_after(
+                next_time.saturating_duration_since(now));
+        }
+
+        // 現在フレームをテクスチャへ反映
+        let rgba = image.current_image();
+        let size =[
+            rgba.width() as usize,
+            rgba.height() as usize, 
+        ];
+        let color_image =
+            egui::ColorImage::from_rgba_unmultiplied(
+                size,
+                rgba.as_raw(),
+            );
+
+        self.texture = Some(
+            ctx.load_texture(
+                self.current_path.to_string_lossy(),
+                color_image,
+                Default::default(),
+            )
+        );                   
+    }
+
+    // ------------------------------------------------------------
+    // プロパティ表示
+    // ------------------------------------------------------------
+    fn show_property(&mut self, ctx: &egui::Context){
+        if self.show_property {
+            ImageProperty::show(
+                &ctx,
+                &self.current_path,
+                &mut self.show_property,
+            );
+        }
+    }
+
+    // ------------------------------------------------------------
+    // 保存確認
+    // ------------------------------------------------------------
+    fn show_save_confirm(&mut self, ctx: &egui::Context){
+        if !self.show_save_confirm { 
+            return;
+        }
+
+        egui::Window::new("画像保存の確認")
+            .collapsible(false)
+            .resizable(false)
+            .show(&ctx, |ui| {
+                ui.label("この画像を保存しますか？");
+                ui.horizontal(|ui| {
+                    if ui.button("保存").clicked() {
+                        self.save_current_image();
+                        self.show_save_confirm = false;
+                    }
+                    if ui.button("キャンセル").clicked() {
+                        self.show_save_confirm =false;
+                    }
+                });
+            });
+    }
+
+    pub fn original_image_size(&self) -> Option<egui::Vec2> {
+            self.original_image_size
+    }
 }
+

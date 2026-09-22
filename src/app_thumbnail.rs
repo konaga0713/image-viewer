@@ -3,12 +3,15 @@
 use eframe::egui;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::{Arc, atomic::{AtomicU64, Ordering}};
 use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::jpeg_loader;
+use crate::image_cache::ImageCache;
 
 const THUMBNAIL_WIDTH: u32 = 160;
 const THUMBNAIL_HEIGHT: u32 = 120;
+const MAX_RESULTS_PER_FRAME: usize = 32;
 
 // サムネイルの要求世代管理
 pub struct ThumbnailRequest {
@@ -17,11 +20,6 @@ pub struct ThumbnailRequest {
 }
 
 // キャッシュ操作
-pub struct ThumbnailCache {
-    images: HashMap<PathBuf, image::RgbaImage>,
-    order: VecDeque<PathBuf>,
-    capacity: usize,
-} 
 const DEFAULT_CAPACITY: usize = 1000;
 
 // サムネイルの作成結果
@@ -38,7 +36,9 @@ pub struct ThumbnailState {
     pub loading: HashSet<PathBuf>,
     pub failed:  HashSet<PathBuf>,
     pub generation: u64,
-    pub cache: ThumbnailCache,
+    pub current_generation: Arc<AtomicU64>,
+    pub cache: ImageCache,
+    pub scroll_to_top: bool,
 }
 
 impl ThumbnailState {
@@ -49,9 +49,17 @@ impl ThumbnailState {
         let (result_tx, rx) =
             mpsc::channel::<ThumbnailResult>();
 
-        // サムネイルワーカースレッド
+        let current_generation = Arc::new(AtomicU64::new(0));
+        let worker_generation = Arc::clone(&current_generation);
+
+            // サムネイルワーカースレッド
         std::thread::spawn(move || {
             while let Ok(request) = request_rx.recv() {
+                // すでに古い要求ならデコードしない
+                if request.generation != worker_generation.load(Ordering::Relaxed){
+                    continue;
+                }
+
                 let result = 
                     if jpeg_loader::is_jpeg(&request.path) {
                         jpeg_loader::load(&request.path)
@@ -65,6 +73,12 @@ impl ThumbnailState {
                                 create_thumbnail(&thumbnail,)})
                             .map_err(|e| e.to_string())
                     };
+
+                // デコード中にフォルダが変更された
+                if request.generation != worker_generation.load(Ordering::Relaxed){
+                    continue;
+                }
+
                 let _ = result_tx.send(
                     ThumbnailResult {
                         generation: request.generation,
@@ -84,12 +98,18 @@ impl ThumbnailState {
             loading: HashSet::new(),
             failed: HashSet::new(),
             generation: 0,
-            cache: ThumbnailCache::new(DEFAULT_CAPACITY),
+            current_generation,
+            cache: ImageCache::new(DEFAULT_CAPACITY),
+            scroll_to_top: true,
         }
     }
 
     pub fn update_results(&mut self, ctx: &egui::Context) {
-        while let Ok(result) = self.rx.try_recv() {
+
+        for _ in 0..MAX_RESULTS_PER_FRAME {
+            let Ok(result) = self.rx.try_recv() else {
+                break;
+            };
             // 古い世代の結果は破棄
             if result.generation != self.generation {
                 continue;
@@ -128,64 +148,6 @@ impl ThumbnailState {
     }
 }
 
-impl ThumbnailCache {
-    pub fn new(capacity: usize) -> Self {
-        Self {
-            images: HashMap::new(),
-            order: VecDeque::new(),
-            capacity,
-        }
-    }
-
-    pub fn contains(&self, path: &PathBuf) -> bool {
-        self.images.contains_key(path)
-    }
-
-    pub fn get(&mut self, path: &PathBuf) -> Option<&image::RgbaImage> {
-        if !self.images.contains_key(path) {
-            return None;
-        }
-
-        // 最近使用したものとして末尾へ移動
-        self.order.retain(|p| p != path);
-        self.order.push_back(path.clone());
-        self.images.get(path)
-    }
-
-    pub fn insert(&mut self, path: PathBuf, image: image::RgbaImage) {
-        // 既存ならアクセス順だけ更新
-        if self.images.contains_key(&path) {
-            self.order.retain(|p| p != &path);
-        }
-
-        self.images.insert(path.clone(), image);
-        self.order.push_back(path);
-
-        // 最大枚数を超えたら最古を削除
-        while self.order.len() > self.capacity {
-            if let Some(old_path) = self.order.pop_front(){
-                self.images.remove(&old_path);
-            }
-        }
-    } 
-
-    pub fn remove(&mut self, path: &PathBuf){
-        self.images.remove(path);
-        self.order.retain(|p| p != path);
-    } 
-
-    pub fn retain_existing_files(&mut self){
-        self.order.retain(|path| {
-            if path.exists() {
-                true
-            } else {
-                self.images.remove(path);
-                false
-            }     
-        });
-    }
-
-}
 
 fn create_thumbnail(image: &image::RgbaImage) -> image::RgbaImage {
     let width = image.width();

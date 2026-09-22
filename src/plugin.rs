@@ -98,12 +98,15 @@ impl PluginManager {
         }
 
         // 3. gif
-        if ext == "gif" {
-            return GifAnimation::load(path)
-                .map(|image| Box::new(image) as Box<dyn ImageContent>)
-                .map_err(|e| e.to_string());
+        // 処理方式変更により不要
+        /*
+        if path.extension() == Some(OsStr::new("gif")) {
+           return GifAnimation::load(path)
+            .map(|image| Box::new(image) as Box<dyn ImageContent>)
+            .map_err(|e| e.to_string());
         }
-
+        */
+        
         // 4. プラグインから検索
         for plugin in &self.plugins {
             if plugin.supported_extensions().contains(&ext.as_str()) {

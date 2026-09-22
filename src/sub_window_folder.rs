@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use eframe::egui;
 
+use crate::image_cache::ImageCache;
 use crate::plugin::PluginManager;
 use crate::sub_window::SubWindow;
 
@@ -13,8 +14,8 @@ impl SubWindow {
         new_dir: PathBuf, 
         ctx: &egui::Context,    
         plugin_mgr: &Arc<PluginManager>,
+        image_cache: &mut ImageCache,
     ) {
-
         let image_files = Self::get_image_files(&new_dir, plugin_mgr);
         if image_files.is_empty() {
             return;
@@ -31,7 +32,7 @@ impl SubWindow {
         self.original_image_size = None;
         self.loading = true;
         self.animation_next_frame_time = None;
-        self.load_async(plugin_mgr.clone(), ctx.clone(),);
+        self.load_async(plugin_mgr.clone(), image_cache, ctx.clone(),);
 
     }
 
@@ -212,6 +213,5 @@ impl SubWindow {
 
         false
     }
-
 
 }

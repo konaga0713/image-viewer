@@ -1,6 +1,5 @@
 use std::path::Path;
 use std::time::Duration;
-use image::DynamicImage::ImageRgba8;
 use image::RgbaImage;
 use std::io::Cursor;
 use image_webp::WebPDecoder;
@@ -13,6 +12,7 @@ pub struct WebpAnimation {
     delays: Vec<std::time::Duration>,
     current_frame: usize,
     rotation: Rotation,
+    display_image: RgbaImage,
 }
 
 impl WebpAnimation {
@@ -49,10 +49,11 @@ impl WebpAnimation {
                 create_rgba_image(width, height, decoded)?;
 
             return Ok(Self {
-                frames: vec![image],
+                frames: vec![image.clone()],
                 delays: vec![Duration::from_millis(0)],
                 current_frame: 0,
                 rotation: Rotation::None,
+                display_image: image,
             });
         }
         // --------------------------------------------------
@@ -81,8 +82,9 @@ impl WebpAnimation {
             images.push(image);
             delays.push(Duration::from_millis(delay_ms as u64));
         } 
+        let display_image = images[0].clone();
 
-        Ok(Self { frames: images, delays, current_frame: 0, rotation: Rotation::None, })
+        Ok(Self { frames: images, delays, current_frame: 0, rotation: Rotation::None, display_image,})
         
     }
 
@@ -162,62 +164,53 @@ impl WebpAnimation {
         Ok(())
     }
 
+    fn update_display_image(&mut self){
+        let frame = &self.frames[self.current_frame];
+
+        self.display_image = match self.rotation{
+            Rotation::None => { frame.clone()}
+            Rotation::Right => {
+                image::DynamicImage::ImageRgba8(frame.clone())
+                    .rotate90()
+                    .to_rgba8()}
+            Rotation::Rotate180 => {
+                image::DynamicImage::ImageRgba8(frame.clone())
+                    .rotate180()
+                    .to_rgba8()}
+            Rotation::Left => {
+                image::DynamicImage::ImageRgba8(frame.clone())
+                    .rotate270()
+                    .to_rgba8()}
+
+        };
+
+    }
 }
 
 
 impl ImageContent for WebpAnimation {
     /// 現在表示すべき画像をRGBA形式で取得
-    fn current_image(&self) -> image::RgbaImage {
-        let frame = &self.frames[self.current_frame];
-
-        match self.rotation {
-            Rotation::None => frame.clone(),
-            Rotation::Right => {
-                image::DynamicImage::ImageRgba8(frame.clone())
-                    .rotate90()
-                    .to_rgba8()
-            }
-            Rotation::Rotate180 => {
-                image::DynamicImage::ImageRgba8(frame.clone())
-                    .rotate180()
-                    .to_rgba8()
-            } 
-            Rotation::Left => {
-                image::DynamicImage::ImageRgba8(frame.clone())
-                    .rotate270()
-                    .to_rgba8()
-            } 
-        }
-
+    fn current_image(&self) -> &image::RgbaImage {
+        &self.display_image
     }
 
     /// 現在の画像サイズ
     fn size(&self) ->  egui::Vec2 {
-        let frame = &self.frames[self.current_frame];
-        match self.rotation {
-            Rotation::None | Rotation::Rotate180 => {
-                egui::vec2(
-                    frame.width() as f32,
-                    frame.height() as f32,
-                )
-            }
-            Rotation::Right | Rotation::Left => {
-                egui::vec2(
-                    frame.height() as f32,
-                    frame.width() as f32,
-                )
-            }
-
-        }
+        egui::vec2(
+            self.display_image.width() as f32,
+            self.display_image.height() as f32,
+        )
     }
 
     /// 右回転
     fn rotate_right(&mut self) {
         self.rotation = self.rotation.rotate_right();
+        self.update_display_image();
     }
     /// 左回転
     fn rotate_left(&mut self) {
         self.rotation = self.rotation.rotate_left();
+        self.update_display_image();
     }
     /// 回転状態
     fn rotation(&self) -> Rotation {
@@ -240,6 +233,8 @@ impl ImageContent for WebpAnimation {
 
         self.current_frame = 
             (self.current_frame + 1) % self.frames.len();
+        self.update_display_image();
+
         self.delays
             .get(self.current_frame)
             .copied()    
