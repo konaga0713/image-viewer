@@ -1,5 +1,6 @@
+///sub_window_window
 
-use crate::sub_window::SubWindow;
+use super::SubWindow;
 
 // 上部UI・タイトルバー等のための余裕
 const TOP_MARGIN :f32 = 80.0;

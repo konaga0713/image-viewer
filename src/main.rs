@@ -12,8 +12,6 @@ mod jpeg_loader;
 mod plugin;
 mod save_image;
 mod static_image;
-mod sub_window_folder;
-mod sub_window_window;
 mod sub_window;
 mod webp_animation;
 mod webp_decoder;

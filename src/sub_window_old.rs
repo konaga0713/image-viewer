@@ -12,31 +12,65 @@ use crate::image_content::ImageContent;
 use crate::image_property::ImageProperty;
 use crate::image_cache::ImageCache;
 
-const MIN_FIT_SCALE: f32 = 0.8;
-pub struct SubWindow {
-    pub id: egui::ViewportId,
-    pub current_path: PathBuf,
-    pub directory_files: Vec<PathBuf>, /// フォルダ内の全画像一覧（前後移動用）
-    pub image_index: usize,
-    pub folder_history: Vec<PathBuf>, /// フォルダ移動履歴（前後移動用）
-    pub fit_to_screen: bool,     /// オプション: 自動縮小モード
-    pub zoom_scale: f32,         /// 手動拡大縮小用スケール
-    pub show_property: bool,     /// プロパティ表示フラグ
-    
-    pub texture: Option<TextureHandle>,
-    pub image: Option<Box<dyn ImageContent>>,
-    pub original_image_size: Option<egui::Vec2>,
-    pub loading: bool,
-    pub keep_window_reposition: bool,
-    pub show_save_confirm: bool,          /// 保存確認ダイアログ
-    pub animation_next_frame_time: Option<std::time::Instant>,
-    // スレッド間通信用チャンネル
-    pub tx: Sender<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
-    pub rx: Receiver<(PathBuf, Result<Box<dyn ImageContent>, String>)>,
+impl SubWindow {
+    // ------------------------------------------------------------
+    // 画像の移動
+    // ------------------------------------------------------------
+    fn move_to_image(&mut self, index: usize, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        if index >= self.directory_files.len(){
+            return;
+        }
+        if index == self.image_index {
+            return;
+        }
+        self.image_index = index;
+        self.current_path = 
+            self.directory_files[index].clone();
 
+            self.texture = None; // 前の画像を破棄してメモリ解放
+            self.image = None;
+            self.original_image_size = None;
+            self.loading = true;
+            self.animation_next_frame_time = None;
+            // 新しい画像を非同期で読み込む
+            self.load_async(plugin_mgr.clone(), image_cache, ctx.clone(),);
+    }
+
+    // ------------------------------------------------------------
+    // ← 前の画像
+    // ------------------------------------------------------------
+    fn previous_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache,) {            
+        if self.image_index > 0 {
+            self.move_to_image(
+                self.image_index - 1,
+                ctx,
+                plugin_mgr,  
+                image_cache,
+            );
+        }
+    }
+
+    // ------------------------------------------------------------
+    // → 次の画像
+    // ------------------------------------------------------------  
+    fn next_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        if self.image_index + 1 < self.directory_files.len() {
+            self.move_to_image(
+                self.image_index + 1,
+                ctx,
+                plugin_mgr,
+                image_cache,    
+            );
+        }
+    }
 }
 
-impl SubWindow {
+
+
+
+
+
+
     pub fn new(
         id: egui::ViewportId,
         path: PathBuf,
@@ -102,12 +136,25 @@ impl SubWindow {
         
         // Cache検索
         if let Some(rgba) = image_cache.get(&self.current_path).cloned() {
+    
+    println!(
+        "[CACHE HIT] {}x{}",
+        rgba.width(),
+        rgba.height()
+    );
+
             let image = StaticImage::new(
                 image::DynamicImage::ImageRgba8(rgba)
             );
             self.image = Some(Box::new(image));
-            self.texture = None;
+            self.original_image_size = self.image.as_ref().map(|i| i.size());
+
+            self.update_texture(&ctx);
             self.loading = false;
+
+            if self.fit_to_screen {
+                self.resize_window_to_image(&ctx);
+            }
 
             return;
         }
@@ -130,6 +177,40 @@ impl SubWindow {
             // 読み込み完了後にGUIを再描画
             ctx.request_repaint();            
         });
+    }
+
+    fn update_texture(&mut self, ctx: &egui::Context) {
+        let Some(image) = &self.image 
+        else {
+            return;
+        };
+
+        let rgba = image.current_image();
+        let size = [
+            rgba.width() as usize,
+            rgba.height() as usize,
+        ];
+
+        let color_image = 
+            egui::ColorImage::from_rgba_unmultiplied(
+                size, 
+                rgba.as_raw(),
+            );
+
+println!(
+    "[TEXTURE] {}x{}",
+    rgba.width(),
+    rgba.height()
+);
+
+
+        self.texture = Some(
+            ctx.load_texture(
+                self.current_path.to_string_lossy(),
+                color_image,
+                Default::default(),
+            )
+        );
     }
 
     fn is_gif(&self) -> bool {
@@ -166,57 +247,6 @@ impl SubWindow {
         // 保存確認
         self.show_save_confirm(&ctx);
         
-    }
-
-    // ------------------------------------------------------------
-    // 画像の移動
-    // ------------------------------------------------------------
-    fn move_to_image(&mut self, index: usize, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
-        if index >= self.directory_files.len(){
-            return;
-        }
-        if index == self.image_index {
-            return;
-        }
-        self.image_index = index;
-        self.current_path = 
-            self.directory_files[index].clone();
-
-            self.texture = None; // 前の画像を破棄してメモリ解放
-            self.image = None;
-            self.original_image_size = None;
-            self.loading = true;
-            self.animation_next_frame_time = None;
-            // 新しい画像を非同期で読み込む
-            self.load_async(plugin_mgr.clone(), image_cache, ctx.clone(),);
-    }
-
-    // ------------------------------------------------------------
-    // ← 前の画像
-    // ------------------------------------------------------------
-    fn previous_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache,) {            
-        if self.image_index > 0 {
-            self.move_to_image(
-                self.image_index - 1,
-                ctx,
-                plugin_mgr,  
-                image_cache,
-            );
-        }
-    }
-
-    // ------------------------------------------------------------
-    // → 次の画像
-    // ------------------------------------------------------------  
-    fn next_image(&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
-        if self.image_index + 1 < self.directory_files.len() {
-            self.move_to_image(
-                self.image_index + 1,
-                ctx,
-                plugin_mgr,
-                image_cache,    
-            );
-        }
     }
 
     // ------------------------------------------------------------
@@ -423,10 +453,17 @@ impl SubWindow {
 
             match result {
                 Ok(image) => {
-                    self.original_image_size = Some(image.size());
-                    self.resize_window_to_image(&ctx);    //ウィンドウサイズを画面に合わせる
+                    self.loading = false;
 
+                    self.original_image_size = Some(image.size());
                     let rgba = image.current_image();
+
+                    self.resize_window_to_image(&ctx);    //ウィンドウサイズを画面に合わせる
+    println!(
+        "[SubWindow] loaded image: {}x{}",
+        rgba.width(),
+        rgba.height()
+    );
 
                     // Static画像をCacheへ保存
                     image_cache.insert(
@@ -434,24 +471,15 @@ impl SubWindow {
                         rgba.clone(),
                     );
 
-                    let size = [
-                        rgba.width() as usize,
-                        rgba.height() as usize,
-                    ];
-                    let color_image =
-                        egui::ColorImage::from_rgba_unmultiplied(
-                            size,
-                            rgba.as_raw(),
-                    );
-                
-                    self.texture = 
-                        Some(ctx.load_texture(
-                            self.current_path.to_string_lossy(),
-                            color_image,
-                            Default::default(),
-                        )
-                    );
+                    // ImageContentを設定
                     self.image = Some(image);
+
+                    // Textureを作成
+                    self.update_texture(&ctx);
+
+                    if self.fit_to_screen {
+                        self.resize_window_to_image(&ctx);
+                    }    
 
                 } 
 
@@ -623,7 +651,7 @@ impl SubWindow {
             } else {
                 scale_x.min(scale_y).min(1.0)
             };
-
+/*
 println!(
     "[IMAGE] texture={}x{}, available={}x{}, scale={}",
     texture.size()[0],
@@ -632,6 +660,7 @@ println!(
     available_size.y,
     scale,
 );
+*/
 
             image_size * scale
         } else {

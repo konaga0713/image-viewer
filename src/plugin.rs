@@ -6,7 +6,6 @@ use std::path::Path;
 use crate::image_content::ImageContent;
 use crate::jpeg_loader;
 use crate::static_image::StaticImage;
-use crate::gif_animation::GifAnimation;
 use crate::webp_animation::WebpAnimation;
 
 // プラグインが実装すべきトレイト定義

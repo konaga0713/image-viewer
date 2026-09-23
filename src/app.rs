@@ -113,8 +113,24 @@ impl MyApp {
     pub fn open_sub_window(&mut self, path: PathBuf, ctx: &egui::Context,) {
         // メイン画面で画像を選択するたびに、新しいサブ画面を作成
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
+
+    println!(
+        "[OPEN_SUBWINDOW] id={:?}, path={:?}, count_before={}",
+        id,
+        path,
+        self.sub_windows.len()
+    );
+
         self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(), &mut self.image_cache));
+
+    println!(
+        "[OPEN_SUBWINDOW] count_after={}",
+        self.sub_windows.len()
+    );
+
     }
+
+
 
     pub fn show_folder_tree(
         &mut self,

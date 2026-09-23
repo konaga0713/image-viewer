@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use crate::app::MyApp;
+
 // サムネイル表示枠
 const THUMBNAIL_FRAME_SIZE: egui::Vec2 = egui::vec2(160.0, 120.0);
 // 1個のサムネイルに必要な幅
@@ -167,6 +168,13 @@ impl MyApp {
 
                 // ダブルクリック
                 if image_response.double_clicked() {
+
+    println!(
+        "[DOUBLE_CLICK] path={:?}, rect={:?}",
+        path,
+        image_response.rect
+    );
+    
                     self.selected_file = Some(path.clone());
                     self.open_sub_window(
                         path.clone(),

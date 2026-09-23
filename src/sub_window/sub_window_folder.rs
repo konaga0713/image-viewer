@@ -1,11 +1,12 @@
-/// sub_window_window
+/// sub_window_folder
 use std::path::PathBuf;
 use std::sync::Arc;
 use eframe::egui;
 
 use crate::image_cache::ImageCache;
 use crate::plugin::PluginManager;
-use crate::sub_window::SubWindow;
+
+use super::SubWindow;
 
 impl SubWindow {
     // 画像フォルダの切り替え
@@ -212,6 +213,50 @@ impl SubWindow {
         }
 
         false
+    }
+
+    // ------------------------------------------------------------
+    // ↑ 前のフォルダ
+    // ------------------------------------------------------------
+    pub fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        println!("===== ArrowUp pressed =====");
+        println!("current_path = {:?}", self.current_path);
+        println!("history = {:?}", self.folder_history);
+
+        // ------------------------------------------------
+        // 履歴があれば、履歴を優先
+        // ------------------------------------------------
+        if let Some(previous_dir) = self.folder_history.pop() {
+            println!("HISTORY = {:?}", previous_dir);
+            self.change_directory(previous_dir, &ctx, plugin_mgr, image_cache);
+            return;
+        } else if let Some(new_dir) = self.previous_directory(plugin_mgr) {
+            println!("TREE PREV = {:?}", new_dir);
+            self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
+        } else {
+            println!("PREV = None");
+        }
+    }
+
+    // ------------------------------------------------------------
+    // ↓ 次のフォルダ
+    // ------------------------------------------------------------
+    pub fn move_to_next_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
+        println!("===== ArrowDown pressed =====");
+        println!("current_path = {:?}", self.current_path);
+
+        if let Some(new_dir) = self.get_next_directory(plugin_mgr) {
+            println!("NEXT = {:?}", new_dir);
+            // 現在のフォルダを履歴に保存
+            if let Some(current_dir) = self.current_path.parent() {
+                self.folder_history.push(current_dir.to_path_buf());
+            }
+            println!("history = {:?}", self.folder_history);                
+
+            self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
+        } else {
+            println!("NEXT = None");
+        }
     }
 
 }
