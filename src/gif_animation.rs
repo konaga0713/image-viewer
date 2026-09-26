@@ -51,10 +51,12 @@ println!("[GIF] load_async START: {:?}", path);
             rx: Some(rx),
         };
 println!(
-        "[GIF] load_async END: loading={}, rx={}, frames={}",
+        "[GIF] load_async END: loading={}, rx={}, frames={}, image_x={}, image_y={} ",
         gif.loading,
         gif.rx.is_some(),
-        gif.frames.len()
+        gif.frames.len(),
+        gif.display_image.width(),
+        gif.display_image.height(),
     );
 
         gif

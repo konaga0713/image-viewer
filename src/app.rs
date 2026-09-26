@@ -7,6 +7,8 @@ use crate::app_thumbnail::ThumbnailState;
 use crate::image_cache::ImageCache;
 use crate::plugin::PluginManager;
 use crate::sub_window::SubWindow;
+use crate::app_config::AppConfig;
+use crate::folder_tree::FolderTree;
 
 const IMAGE_CACHE_CAPACITY: usize = 20;
 pub struct MyApp {
@@ -20,7 +22,12 @@ pub struct MyApp {
     pub thumbnail: ThumbnailState,
     //サブウィンドウ用
     pub image_cache: ImageCache,
-
+    //プロパティ表示 
+    pub show_property: bool,
+    pub property_path: Option<PathBuf>, 
+    //環境情報
+    pub config: AppConfig,
+    pub folder_tree: FolderTree,
 }
 
 impl MyApp {
@@ -36,7 +43,26 @@ impl MyApp {
         // ---------------------------------
         // メイン画面の描画
         // ---------------------------------
-        let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let config = AppConfig::load();
+        let current_dir = config
+            .last_folder
+            .clone()
+            .filter(|path| path.is_dir())
+            .unwrap_or_else(|| {
+                std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+            });
+
+        let tree_root = current_dir
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| current_dir.clone());
+
+        let folder_tree = FolderTree::new(
+            tree_root,
+            current_dir.clone(),
+        );
+
         let mut app = Self {
             current_dir,
             files: Vec::new(),
@@ -46,6 +72,10 @@ impl MyApp {
             auto_fit_option: true,
             thumbnail,
             image_cache: ImageCache::new(IMAGE_CACHE_CAPACITY),
+            show_property: false,
+            property_path: None,
+            config,
+            folder_tree,
         };
 
         app.refresh_files();
@@ -114,72 +144,19 @@ impl MyApp {
         // メイン画面で画像を選択するたびに、新しいサブ画面を作成
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
 
-    println!(
-        "[OPEN_SUBWINDOW] id={:?}, path={:?}, count_before={}",
-        id,
-        path,
-        self.sub_windows.len()
-    );
+    // println!(
+    //     "[OPEN_SUBWINDOW] id={:?}, path={:?}, count_before={}",
+    //     id,
+    //     path,
+    //     self.sub_windows.len()
+    // );
 
         self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(), &mut self.image_cache));
 
-    println!(
-        "[OPEN_SUBWINDOW] count_after={}",
-        self.sub_windows.len()
-    );
-
-    }
-
-
-
-    pub fn show_folder_tree(
-        &mut self,
-        ui: &mut egui::Ui,
-        path: &PathBuf,
-    ) {
-        let Ok(entries) = std::fs::read_dir(path) else {
-            return;
-        };
-        let mut dirs: Vec<PathBuf> = entries
-            .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path())
-            .filter(|path| path.is_dir())
-            .collect();
-
-        dirs.sort();
-
-        for dir in dirs {
-            let name = dir
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let is_current = self.current_dir == dir;
-
-            egui::CollapsingHeader::new(
-                format!("📁 {}",name)
-                )
-                .id_salt(&dir)
-                .show(ui, |ui| {
-                    if ui
-                        .selectable_label(
-                            is_current,
-                            "このフォルダを表示",
-                        )
-                        .clicked()
-                    {
-                        self.current_dir = dir.clone();
-                        self.selected_file = None;
-                        self.refresh_files();
-                    }
-                    self.show_folder_tree(
-                        ui,
-                        &dir,
-                    );    
-                });
-
-        };
+    // println!(
+    //     "[OPEN_SUBWINDOW] count_after={}",
+    //     self.sub_windows.len()
+    // );
 
     }
 

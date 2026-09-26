@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use eframe::egui;
 
 use crate::app::MyApp;
+use crate::image_property::ImageProperty;
 
 // サムネイル表示枠
 const THUMBNAIL_FRAME_SIZE: egui::Vec2 = egui::vec2(160.0, 120.0);
@@ -26,6 +27,12 @@ impl eframe::App for MyApp {
         self.show_left_panel(ui);
         // 画像一覧
         self.show_image_panel(ui, &ctx);
+        // プロパティ表示
+        self.show_property(&ctx);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.config.save();
     }
 }
 
@@ -70,10 +77,9 @@ impl MyApp {
             ui.horizontal(|ui| {
                 if ui.button("フォルダを開く").clicked() {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                        self.current_dir = path;
                         self.thumbnail.generation += 1;
                         self.thumbnail.loading.clear();
-                        self.refresh_files();
+                        self.change_current_dir(path);
                     }
                 }
                 ui.label(format!("現在地: {}", self.current_dir.display()));
@@ -87,17 +93,17 @@ impl MyApp {
     fn show_left_panel(&mut self, ui: &mut egui::Ui) {
         egui::Panel::left("left_panel")
             .resizable(true)
-            .default_size(250.0)
+            .default_size(self.config.tree_width)
             .show(ui, |ui| {
                 ui.heading("フォルダ");
 
                 let current_dir = self.current_dir.clone();
+                let tree_root = Self::get_tree_root(&current_dir);
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    self.show_folder_tree(
-                        ui,
-                        &current_dir,
-                    );
+                    if let Some(path) = self.folder_tree.ui(ui) {
+                        self.change_current_dir(path);
+                    }
                 });
             });
     }
@@ -139,6 +145,7 @@ impl MyApp {
             if let Some(texture) = self.thumbnail.textures.get(path) {
                 // サムネイル枠
                 let image_size = texture.size_vec2();
+
                 let scale = (THUMBNAIL_FRAME_SIZE.x / image_size.x)
                     .min(THUMBNAIL_FRAME_SIZE.y / image_size.y)
                     .min(1.0);
@@ -169,18 +176,49 @@ impl MyApp {
                 // ダブルクリック
                 if image_response.double_clicked() {
 
-    println!(
-        "[DOUBLE_CLICK] path={:?}, rect={:?}",
-        path,
-        image_response.rect
-    );
+    // println!(
+    //     "[DOUBLE_CLICK] path={:?}, rect={:?}",
+    //     path,
+    //     image_response.rect
+    // );
     
-                    self.selected_file = Some(path.clone());
-                    self.open_sub_window(
-                        path.clone(),
+                    self.open_image(
+                        &path,
                         &ctx,
                     );    
                 }
+
+                // ====================================================
+                // 右クリックメニュー
+                // ====================================================
+                image_response.context_menu(|ui| {
+                    if ui.button("開く").clicked() {
+                        self.open_image(&path, ctx);
+                        ui.close();
+                    }
+                    if ui.button("プログラムから開く").clicked() {
+                        println!(
+                            "[OPEN_WITH] path={:?}",
+                            path
+                        );
+
+                        if let Err(err) = crate::windows_shell::open_with(path) {
+                            eprintln!("[OPEN_WITH] error: {}", err);
+                        }
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui.button("プロパティ").clicked() {
+                        println!(
+                            "[OPEN_WITH] path={:?}",
+                            path
+                        );
+
+                        self.property_path = Some(path.clone());
+                        self.show_property = true;
+                        ui.close();
+                    }
+                });
             } else if self.thumbnail.loading.contains(path) {
                 // 読み込み中
                 ui.allocate_ui(
@@ -228,4 +266,48 @@ impl MyApp {
         );
     }
 
+    fn open_image(&mut self, path: &PathBuf, ctx: &egui::Context,) {
+        self.selected_file = Some(path.clone());
+        self.open_sub_window(path.to_path_buf(), ctx);
+    }
+
+        fn show_property(&mut self, ctx: &egui::Context,) {
+        if self.show_property {
+            if let Some(path) = &self.property_path {
+                ImageProperty::show(
+                    ctx,
+                    path,
+                    &mut self.show_property,
+                );
+            }
+        }
+    }
+
+    fn get_tree_root(path: &PathBuf) -> PathBuf {
+        let mut components = path.components();
+        let Some(prefix) = components.next() else {
+            return path.clone();
+        };
+        let Some(root) = components.next() else {
+            return path.clone();
+        };
+
+        PathBuf::from(prefix.as_os_str()).join(root.as_os_str())
+    }
+
+    fn change_current_dir(&mut self, path: PathBuf) {
+        if self.current_dir == path {
+            return;
+        }
+        self.current_dir = path.clone();
+        self.config.last_folder = Some(path.clone());
+
+        let tree_root = Self::get_tree_root(&path);
+
+        self.folder_tree.set_current_path(tree_root, path);
+
+        self.selected_file = None;
+        self.refresh_files();
+    }
 }
+

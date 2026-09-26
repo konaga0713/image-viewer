@@ -780,3 +780,70 @@ fn setup_japanese_font(ctx: &egui::Context) {
         eprintln!("エラー: 日本語フォントファイルが見つかりませんでした。");
     }
 }
+    pub fn show_folder_tree(
+        &mut self,
+        ui: &mut egui::Ui,
+        path: &PathBuf,
+    ) {
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return;
+        };
+
+        let mut dirs: Vec<PathBuf> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+
+        dirs.sort();
+
+        for dir in dirs {
+            let name = dir
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            let is_current = self.current_dir == dir;     
+            // current_dir に到達するまでの親なら展開
+            let should_open = self.current_dir.starts_with(&dir);
+
+            // [▼]「📁」の分離
+            ui.horizontal(|ui| {
+                let arrow = if should_open {
+                    "▼"
+                } else {
+                    "▶"
+                };
+
+                if ui.small_button(arrow).clicked() {
+                    // 展開/格納
+                }
+                
+                // フォルダ名
+                let response = ui.selectable_label(
+                    is_current,
+                    format!("📁 {}",name),
+                );
+
+                if response.clicked() {
+                    self.current_dir = dir.clone();
+                    self.selected_file = None;
+                    // 最後に表示したフォルダを更新
+                    self.config.last_folder = Some(self.current_dir.clone());
+                    self.refresh_files();
+
+                    
+                    //pgm終了時に変更予定                        
+                    self.config.save();
+
+                }
+            });
+
+            if should_open {
+                ui.indent(&dir, |ui| {
+                    self.show_folder_tree(ui, &dir);
+                });
+            }
+        }
+    }

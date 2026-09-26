@@ -1,7 +1,9 @@
 ///main
 mod app;
+mod app_config;
 mod app_thumbnail;
 mod app_ui;
+mod folder_tree;
 mod gif_animation;
 mod gif_worker;
 mod image_cache;
@@ -15,8 +17,10 @@ mod static_image;
 mod sub_window;
 mod webp_animation;
 mod webp_decoder;
+mod windows_shell;
 
 use crate::app::MyApp;
+
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {

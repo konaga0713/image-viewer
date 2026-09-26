@@ -91,21 +91,17 @@ impl SubWindow {
             return;
         };
 
-
         let image_size = texture.size_vec2() * self.zoom_scale;
 
-        let display_size = if self.fit_to_screen {
-            let available_size = ui.available_size();
+        let display_size = 
+            if self.fit_to_screen {
+                let available_size = ui.available_size();
 
-            let scale_x = available_size.x / image_size.x;
-            let scale_y = available_size.y / image_size.y;
-            // 1.0を上限にするので、小さい画像は拡大しない
-            let scale = if scale_x.min(scale_y) >= MIN_FIT_SCALE {
-                1.0
-            } else {
-                scale_x.min(scale_y).min(1.0)
-            };
-/*
+                let scale_x = available_size.x / image_size.x;
+                let scale_y = available_size.y / image_size.y;
+                // 1.0を上限にするので、小さい画像は拡大しない
+                let scale = scale_x.min(scale_y).min(1.0);
+                
 println!(
     "[IMAGE] texture={}x{}, available={}x{}, scale={}",
     texture.size()[0],
@@ -114,12 +110,12 @@ println!(
     available_size.y,
     scale,
 );
- */
 
-            image_size * scale
-        } else {
-            image_size  // 自動縮小OFFの場合は原寸表示
-        };
+                image_size * scale
+            } else {
+                image_size
+            };
+
 
         // スクロールエリアを配置し、基準を左上に設定
         egui::ScrollArea::both()

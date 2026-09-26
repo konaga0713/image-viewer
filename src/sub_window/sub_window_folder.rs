@@ -45,6 +45,7 @@ impl SubWindow {
                 .filter_map(|entry| entry.ok().map(|entry| entry.path()))
                 .filter(|pb| pb.is_dir())
                 .collect();
+
             subdirs.sort_by_key(|p| {
                 p.file_name()
                     .unwrap_or_default()
@@ -87,32 +88,18 @@ impl SubWindow {
         // 現在表示している画像のフォルダ
         let current_dir = self.current_path.parent()?.to_path_buf();
 
-        // 現在フォルダにサブフォルダがあれば、最初のサブフォルダへ
-        let sub_dirs = Self::get_subdirectories(&current_dir);
-        for sub_dir in &sub_dirs {
-            if !Self::get_image_files(&sub_dir, plugin_mgr).is_empty() {
-                return Some(sub_dir.clone().to_path_buf());
-            }
-        }
-
-        // サブフォルダがなければ、親フォルダの兄弟フォルダを探す
         let mut dir = current_dir;
 
         loop{
-            let parent_dir = dir.parent()?.to_path_buf();
-            let sibling_dirs = Self::get_subdirectories(&parent_dir);
-            let image_index = sibling_dirs.iter().position(|d| d == &dir)?;
+            let next = Self::next_dfs_directory(&dir)?;
+            // println!("DFS NEXT CHECK = {:?}", next);
 
-            // 現在フォルダより後ろにある兄弟フォルダを探す
-            for target_dir in sibling_dirs.iter().skip(image_index + 1) {
-
-                if !Self::get_image_files(target_dir, plugin_mgr).is_empty() {
-                    println!("FOUND = {:?}", target_dir);
-                    return Some(target_dir.clone().to_path_buf());
-                }
+            if !Self::get_image_files(&next, plugin_mgr).is_empty() {
+                // println!("DFS NEXT FOUND = {:?}", next);
+                return Some(next);
             }
             // 次の兄弟がなければ、さらに親へ
-            dir = parent_dir;
+            dir = next;
         }
 
     }
@@ -122,97 +109,20 @@ impl SubWindow {
     /// 優先順位:
     /// 1. サブフォルダ
     /// 2. 次の兄弟フォルダ
-    pub(crate) fn previous_directory(
-        &self,
-        plugin_mgr: &Arc<PluginManager>,
-    ) -> Option<PathBuf> {
-        // 現在表示している画像のフォルダ
+    fn previous_directory(&self, plugin_mgr: &Arc<PluginManager>,) -> Option<PathBuf> {
         let current_dir = self.current_path.parent()?.to_path_buf();
 
-        // ルートまでたどる
-        let mut dir = current_dir.clone();
-
+        let mut dir = current_dir;
         loop {
-            let parent_dir = dir.parent()?.to_path_buf();
-            let sibling_dirs = Self::get_subdirectories(&parent_dir);
-            let index = sibling_dirs.iter().position(|d| d == &dir)?;
+            let previous = Self::previous_dfs_directory(&dir)?;
+            // println!("DFS PREV CHECK = {:?}", previous);
 
-            // 現在フォルダより前にある兄弟フォルダを探す
-            for target_dir in sibling_dirs.iter().take(index).rev() {
-                if !Self::has_image_directory(target_dir, plugin_mgr) {
-                    continue;
-                } else {
-                    return Some(Self::last_directory(target_dir, plugin_mgr));
-                }
+            if !Self::get_image_files(&previous, plugin_mgr).is_empty() {
+                println!("DFS PREV FOUND = {:?}", previous);
+                return Some(previous);
             }
-
-            // 親フォルダに戻る
-            if !Self::get_image_files(&parent_dir, plugin_mgr).is_empty() {
-                return Some(parent_dir);
-            }
-            dir = parent_dir;
+            dir = previous
         }
-    }
-
-    /// 指定フォルダ以下で、深さ優先順の最後に位置する
-    /// 「画像を持つフォルダ」を取得する。
-    pub(crate) fn last_directory(
-        dir: &PathBuf,
-        plugin_mgr: &Arc<PluginManager>,
-    ) -> PathBuf {
-        let sub_dirs = Self::get_subdirectories(dir);
-        // 最後の子孫から検索
-        for sub_dir in sub_dirs.iter().rev() {
-            if let Some(last) = Self::last_image_directory(sub_dir, plugin_mgr,) {
-                return last;
-            }
-        }
-
-        if !Self::get_image_files(dir, plugin_mgr).is_empty() {
-            return dir.clone();
-        }
-        dir.clone()
-    }
-    
-    pub(crate) fn last_image_directory(
-        dir: &PathBuf,
-        plugin_mgr: &Arc<PluginManager>,
-    ) -> Option<PathBuf> {
-
-        let sub_dirs = Self::get_subdirectories(dir);
-
-        // 最後の子孫から検索
-        for sub_dir in sub_dirs.iter().rev() {
-
-            if let Some(last) = Self::last_image_directory(
-                sub_dir,
-                plugin_mgr,
-            ) {
-                return Some(last);
-            }
-        }
-
-        // 自分自身が画像フォルダなら採用
-        if !Self::get_image_files(dir, plugin_mgr).is_empty() {
-            return Some(dir.clone());
-        }
-
-        None
-    }    
-
-    fn has_image_directory(dir: &PathBuf, plugin_mgr: &Arc<PluginManager>,
-    ) -> bool {
-        if !Self::get_image_files(dir, plugin_mgr).is_empty() {
-            return true;
-        }
-
-        for sub in Self::get_subdirectories(dir) {
-            if Self::has_image_directory(&sub, plugin_mgr) {
-                return true;
-            }
-        }
-
-        false
     }
 
     // ------------------------------------------------------------
@@ -221,16 +131,8 @@ impl SubWindow {
     pub fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
         println!("===== ArrowUp pressed =====");
         println!("current_path = {:?}", self.current_path);
-        println!("history = {:?}", self.folder_history);
 
-        // ------------------------------------------------
-        // 履歴があれば、履歴を優先
-        // ------------------------------------------------
-        if let Some(previous_dir) = self.folder_history.pop() {
-            println!("HISTORY = {:?}", previous_dir);
-            self.change_directory(previous_dir, &ctx, plugin_mgr, image_cache);
-            return;
-        } else if let Some(new_dir) = self.previous_directory(plugin_mgr) {
+        if let Some(new_dir) = self.previous_directory(plugin_mgr) {
             println!("TREE PREV = {:?}", new_dir);
             self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
         } else {
@@ -247,11 +149,6 @@ impl SubWindow {
 
         if let Some(new_dir) = self.get_next_directory(plugin_mgr) {
             println!("NEXT = {:?}", new_dir);
-            // 現在のフォルダを履歴に保存
-            if let Some(current_dir) = self.current_path.parent() {
-                self.folder_history.push(current_dir.to_path_buf());
-            }
-            println!("history = {:?}", self.folder_history);                
 
             self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
         } else {
@@ -259,4 +156,60 @@ impl SubWindow {
         }
     }
 
+    fn next_dfs_directory(dir: &PathBuf,) -> Option<PathBuf> {
+         // 子フォルダがあれば最初の子へ    
+         let sub_dirs = Self::get_subdirectories(dir);
+
+         if let Some(first) = sub_dirs.first() {
+                return Some(first.clone());
+         }
+
+        // 子がなければ兄弟を探す         
+        let mut current = dir.clone();
+
+        loop {
+            let parent = current.parent()?.to_path_buf();
+            let siblings = Self::get_subdirectories(&parent);
+            let index = siblings
+                .iter()
+                .position(|d| d == &current)?;
+
+            // 次の兄弟
+            if let Some(next) = siblings.get(index + 1) {
+                return Some(next.clone());
+            }            
+
+            // 兄弟がなければ親へ戻る
+            current = parent;
+        }
+    }
+
+    fn previous_dfs_directory(dir: &PathBuf,) -> Option<PathBuf> {
+        let parent = dir.parent()?.to_path_buf();
+        let siblings = Self::get_subdirectories(&parent);
+
+        let index = siblings
+            .iter()
+            .position(|d| d ==dir)?;
+
+        // 前の兄弟がある場合            
+        if index > 0 {
+            let previous_sibling = &siblings[index -1];
+            return Some(Self::last_dfs_directory(previous_sibling));
+        }
+        // 兄弟がなければ親へ戻る
+        Some(parent)
+    }
+
+    /// 指定フォルダ以下で、深さ優先順の最後に位置する
+    /// 「画像を持つフォルダ」を取得する。
+    fn last_dfs_directory(dir: &PathBuf,) -> PathBuf {
+        let sub_dirs = Self::get_subdirectories(dir);
+
+        if let Some(last) = sub_dirs.last() {
+            return Self::last_dfs_directory(last);
+        }
+
+        dir.clone()
+    }
 }

@@ -4,10 +4,10 @@ use super::SubWindow;
 
 // 上部UI・タイトルバー等のための余裕
 const TOP_MARGIN :f32 = 80.0;
-const SIDE_MARGIN:f32 = 0.0;
+const SIDE_MARGIN:f32 = 8.0;
 // 小さい画像でも確保する最小表示領域
-const MIN_DISPLAY_WIDTH: f32 = 100.0;
-const MIN_DISPLAY_HEIGHT: f32 = 100.0;
+const MIN_WINDOW_WIDTH: f32 = 100.0;
+const MIN_WINDOW_HEIGHT: f32 = 100.0;
 
 
 #[cfg(target_os = "windows")]
@@ -94,9 +94,9 @@ println!(
         // サブウィンドウサイズ
         let window_size = egui::vec2(
             ((scaled_image_size.x * scale) + SIDE_MARGIN * 2.0)
-                .max(MIN_DISPLAY_WIDTH),
+                .max(MIN_WINDOW_WIDTH),
             ((scaled_image_size.y * scale) + TOP_MARGIN)
-                .max(MIN_DISPLAY_HEIGHT),
+                .max(MIN_WINDOW_HEIGHT),
         );
 println!(
     "fit: available={},{} window={},{}",
@@ -114,9 +114,9 @@ println!(
             // 目標とするInnerサイズ（画像原寸 + UIマージン）            
             let target_inner = egui::vec2(
                 (scaled_image_size.x + SIDE_MARGIN * 2.0)
-                    .max(MIN_DISPLAY_WIDTH),
+                    .max(MIN_WINDOW_WIDTH),
                 (scaled_image_size.y + TOP_MARGIN)
-                    .max(MIN_DISPLAY_HEIGHT),
+                    .max(MIN_WINDOW_HEIGHT),
             );
 
             // 目標サイズに枠（decoration）を足したOuterサイズ
@@ -131,8 +131,8 @@ println!(
 
             // サブウィンドウサイズ
             let final_inner = egui::vec2(
-                (final_outer_width - decoration.x).max(100.0),
-                (final_outer_height - decoration.y).max(100.0),
+                (final_outer_width - decoration.x).max(MIN_WINDOW_WIDTH),
+                (final_outer_height - decoration.y).max(MIN_WINDOW_HEIGHT),
             );
 
     println!(

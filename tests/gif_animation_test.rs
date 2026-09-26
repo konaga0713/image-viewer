@@ -1,3 +1,4 @@
+
 use std::path::PathBuf;
 use image_viewer::gif_animation::GifAnimation;
 
