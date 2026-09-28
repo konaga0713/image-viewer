@@ -1,7 +1,7 @@
 /// app_tree
-// ↑ ↓  : 同じ階層のフォルダを移動
-// →    : 1回目＝展開、2回目＝最初の子フォルダへ
-// ←    : 親フォルダへ
+// ↑ ↓ : 見えているフォルダを移動
+// → : 自フォルダを展開
+// ← : 自フォルダを格納
 
 use std::path::{Path, PathBuf};
 use eframe::egui;
@@ -103,7 +103,6 @@ impl FolderNode {
 #[derive(Debug, Clone)]
 struct VisibleItem {
     path: PathBuf,
-    parent_path: Option<PathBuf>,
     name: String,
     depth: usize,
     is_expanded: bool,
@@ -114,6 +113,8 @@ pub struct FolderTree {
     selected_path: PathBuf,             //現在選択されているフォルダ
     visible_items: Vec<VisibleItem>,    // 表示用の平坦化されたリスト
     last_notified_path: PathBuf,        // 前回MyAppへ通知した選択フォルダ
+    visible_dirty: bool,
+    scroll_to_selected: bool,
 }
 
 impl FolderTree {
@@ -129,6 +130,8 @@ impl FolderTree {
             selected_path: selected_path.clone(),
             visible_items: Vec::new(),
             last_notified_path: selected_path,
+            visible_dirty: true,
+            scroll_to_selected: false,
         };
 
         // selected_pathまでの経路を展開
@@ -141,36 +144,59 @@ impl FolderTree {
     /// Tree UIを描画する。
     pub fn ui(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
         self.handle_keyboard(ui.ctx());
-        self.rebuild_visible_items();
+
+        if self.visible_dirty {
+            self.rebuild_visible_items();
+        }
 
         let mut clicked_path = None;
+        let visible_items = self.visible_items.clone();
+        let selected_path = self.selected_path.clone();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for item in &self.visible_items {
-                let selected = self.selected_path == item.path;
+            for item in &visible_items {
+                let selected = selected_path == item.path;
 
                 let path = item.path.clone();
 
                 ui.horizontal(|ui| {
                     ui.add_space(item.depth as f32 * 18.0);
                     let icon = if item.is_expanded {
-                        "▼"
+                        "[-]"
                     } else {
-                        "▶"
+                        "[+]"
                     };
 
                     let label = format!("{} {}", icon, item.name);
-                    let response = ui.selectable_label(selected, label);
+
+                    let response = ui.add(
+                        egui::Button::selectable(selected, label)
+                            .truncate(),
+                    );
 
                     if response.clicked() {
-                        clicked_path = Some(path.clone());
+                        self.select_and_toggle(path.clone());
                     }
                     if response.double_clicked() {
                         clicked_path = Some(path.clone());
                     }
+
+                    // 現在選択されているフォルダを画面内へ移動        
+                    if selected && self.scroll_to_selected {
+                        let visible_rect = ui.clip_rect();
+
+                        if !visible_rect.intersects(response.rect) {
+                            ui.scroll_to_rect(
+                                response.rect, 
+                                Some(egui::Align::TOP));
+                        }
+                    }
+
                 });
             }
         });
+
+        self.scroll_to_selected = false;
 
         if let Some(path) = clicked_path {
             self.select_path(path);
@@ -190,57 +216,43 @@ impl FolderTree {
     fn handle_keyboard(&mut self, ctx: &egui::Context) {
         ctx.input(|input| {
             if input.key_pressed(egui::Key::ArrowUp) {
-                self.move_sibling(-1);
+                self.move_visible(-1);
             }
             if input.key_pressed(egui::Key::ArrowDown) {
-                self.move_sibling(1);
+                self.move_visible(1);
             }
             if input.key_pressed(egui::Key::ArrowRight) {
-                self.move_child();
+                self.expand_current();
             }
             if input.key_pressed(egui::Key::ArrowLeft) {
-                self.move_parent();
+                self.collapse_current();
             }
         });
     }
 
-    fn move_sibling(&mut self, direction: i32) {
-        let Some(current) = self.find_visible(&self.selected_path) else {
-            return;
-        };
-
-        let Some(parent_path) = current.parent_path.clone() else {
-            return;
-        };
-
-        let siblings: Vec<PathBuf> =self
+    fn move_visible(&mut self, direction: i32) {
+        let Some(current_index) = self
             .visible_items
             .iter()
-            .filter(|item| item.parent_path.as_ref() == Some(&parent_path))
-            .map(|item| item.path.clone())
-            .collect();
-
-        let Some(current_index) = siblings
-            .iter()
-            .position(|path| path == &self.selected_path)
+            .position(|item| item.path == self.selected_path)
         else {
             return;
         };
 
         let new_index = current_index as i32 + direction;
-        if new_index < 0 || new_index >= siblings.len() as i32 {
+
+        if new_index < 0 || new_index >= self.visible_items.len() as i32 {
             return;
         }
 
-            self.selected_path = siblings[new_index as usize].clone();
+        self.selected_path = self.visible_items[new_index as usize].path.clone();
+
+        self.scroll_to_selected = true;
     }
 
-    /// 1回目:
+
     ///     未展開なら展開する
-    ///
-    /// 2回目:
-    ///     展開済みなら最初の子フォルダへ移動する
-    fn move_child(&mut self) {
+    fn expand_current(&mut self) {
         let path = self.selected_path.clone();
 
         let Some(node) = self.root.find_mut(&path) else {
@@ -248,6 +260,7 @@ impl FolderTree {
         };
 
         node.load_children();
+
         if node.children.is_empty() {
             return;
         }
@@ -255,24 +268,23 @@ impl FolderTree {
         // まだ展開していない
         if !node.is_expanded {
             node.is_expanded = true;
-            return;
+            self.visible_dirty = true;
         }
-
-        // 展開済みなら最初の子フォルダへ
-        self.selected_path = node.children[0].path.clone();
     }
 
-    /// 親フォルダへ移動する。
-    fn move_parent(&mut self) {
-        let Some(current) = self.find_visible(&self.selected_path) else {
+    /// フォルダの格納
+    fn collapse_current(&mut self) {
+        let path = self.selected_path.clone();
+
+        let Some(node) = self.root.find_mut(&path) else {
             return;
         };
 
-        let Some(parent_path) = current.parent_path.clone() else {
-            return;
-        };    
-
-        self.selected_path = parent_path;
+        // 展開時は格納する
+        if node.is_expanded {
+            node.is_expanded = false;
+            self.visible_dirty = true;
+        }
     }
 
     // 選択
@@ -289,21 +301,20 @@ impl FolderTree {
 
         Self::collect_visible(
             &self.root,
-            None,
             0,
             &mut self.visible_items,
         );
+
+        self.visible_dirty = false;
     }
 
     fn collect_visible(
         node: &FolderNode,
-        parent_path: Option<PathBuf>,
         depth: usize,
         output: &mut Vec<VisibleItem>,
     ) {
         output.push(VisibleItem { 
             path: node.path.clone(),
-            parent_path: parent_path.clone(),
             name: node.name.clone(),
             depth,
             is_expanded: node.is_expanded,
@@ -313,20 +324,12 @@ impl FolderTree {
             for child in &node.children {
                 Self::collect_visible(
                     child,
-                    Some(node.path.clone()),
                     depth + 1,
                     output,
                 );
             }
 
         }
-    }
-
-    fn find_visible(&self, path: &Path) -> Option<VisibleItem> {
-        self.visible_items
-            .iter()
-            .find(|item| item.path == path)
-            .cloned()
     }
 
     /// selected_pathまでの親をすべて展開する
@@ -350,6 +353,7 @@ impl FolderTree {
             node.load_children();
             node.is_expanded = true;
         }
+        self.visible_dirty = true;
     } 
 
     pub fn selected_path(&self) -> &Path {
@@ -365,4 +369,22 @@ impl FolderTree {
         self.expand_path_to(&selected_path);
         self.rebuild_visible_items();
     } 
+
+    fn select_and_toggle(&mut self, path: PathBuf) {
+        self.selected_path = path.clone();
+
+        let Some(node) = self.root.find_mut(&path) else {
+            return;
+        };
+
+        node.load_children();
+
+        if node.children.is_empty() {
+            return;
+        }
+
+        node.is_expanded = !node.is_expanded;
+        self.visible_dirty = true;
+    }
+
 }

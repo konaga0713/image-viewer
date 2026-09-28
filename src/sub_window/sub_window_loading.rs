@@ -72,13 +72,14 @@ impl SubWindow {
         });
     }
 
-    fn update_texture(&mut self, ctx: &egui::Context) {
+    pub fn update_texture(&mut self, ctx: &egui::Context) {
         let Some(image) = &self.image 
         else {
             return;
         };
 
         let rgba = image.current_image();
+
         let size = [
             rgba.width() as usize,
             rgba.height() as usize,
@@ -120,10 +121,12 @@ println!(
     pub fn process_image_loading(&mut self, ctx: &egui::Context, image_cache: &mut ImageCache,) {
         // GIFなど、ImageContent内部の非同期読み込み
         let mut gif_changed = false;
+let start = std::time::Instant::now();
 
         if let Some(image) = &mut self.image {
             gif_changed = image.update_loading();
             self.loading = image.is_loading();
+println!("decode:{:?}",start.elapsed());
         }
 
         if gif_changed {
@@ -173,6 +176,7 @@ println!(
 
             match result {
                 Ok(image) => {
+let total_start = std::time::Instant::now();
                     let rgba = image.current_image().clone();
                     
     println!(
@@ -180,25 +184,30 @@ println!(
         rgba.width(),
         rgba.height()
     );
+let start = std::time::Instant::now();
 
                     // ImageContentを設定
                     self.original_image_size = Some(image.size());
                     self.image = Some(image);
 
+                    // 表示用Texture無効化
+                    self.display_texture = None;
+                    self.display_texture_size = None;
+
                     // Static画像をCacheへ保存
                     image_cache.insert(
                         loaded_path.clone(),
-                        rgba.clone(),
+                        rgba,
                     );
 
                     // Textureを作成
-                    self.update_texture(&ctx);
+                    // self.update_texture(&ctx);
 
                     //ウィンドウサイズを画面に合わせる
                     self.resize_pending = true;
 
                     self.loading = false;
-
+println!("total:{:?}",total_start.elapsed());
                 } 
 
                 Err(err_msg) => {

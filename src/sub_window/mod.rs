@@ -28,7 +28,9 @@ pub struct SubWindow {
     pub zoom_scale: f32,         /// 手動拡大縮小用スケール
     pub show_property: bool,     /// プロパティ表示フラグ
     
-    pub texture: Option<TextureHandle>,
+    pub texture: Option<TextureHandle>,     ///元画像
+    pub display_texture: Option<TextureHandle>, ///表示用画像
+    pub display_texture_size: Option<[u32; 2]>, ///表示画像サイズ
     pub image: Option<Box<dyn ImageContent>>,
     pub original_image_size: Option<egui::Vec2>,
     pub loading: bool,
@@ -72,6 +74,8 @@ impl SubWindow {
             fit_to_screen,
             zoom_scale: 1.0,
             texture: None,
+            display_texture: None,
+            display_texture_size: None,
             image: None,
             original_image_size: None,
             show_property: false,

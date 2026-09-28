@@ -4,7 +4,7 @@ use libloading::{Library, Symbol};
 use std::path::Path;
 
 use crate::image_content::ImageContent;
-use crate::jpeg_loader;
+use crate::jpeg_loader::{self, LoadMode};
 use crate::static_image::StaticImage;
 use crate::webp_animation::WebpAnimation;
 
@@ -76,7 +76,7 @@ impl PluginManager {
     pub fn try_decode(&self, path: &Path) -> Result<Box<dyn ImageContent>, String> {
         // 1. jpegは jpeg_loader でデコード
         if jpeg_loader::is_jpeg(&path) {
-            return jpeg_loader::load(&path)
+            return jpeg_loader::load(&path, LoadMode::Full)
                 .map(|image| {
                     Box::new(StaticImage::new(image::DynamicImage::ImageRgba8(image))) 
                         as Box<dyn ImageContent>})

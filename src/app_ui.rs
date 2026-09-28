@@ -94,7 +94,9 @@ impl MyApp {
         egui::Panel::left("left_panel")
             .resizable(true)
             .default_size(self.config.tree_width)
+            .size_range(egui::Rangef::new(150.0, 800.0))
             .show(ui, |ui| {
+                self.config.tree_width = ui.available_width();
                 ui.heading("フォルダ");
 
                 let current_dir = self.current_dir.clone();

@@ -55,29 +55,24 @@ impl ThumbnailState {
             // サムネイルワーカースレッド
         std::thread::spawn(move || {
             while let Ok(request) = request_rx.recv() {
-                // すでに古い要求ならデコードしない
-                if request.generation != worker_generation.load(Ordering::Relaxed){
-                    continue;
-                }
 
                 let result = 
                     if jpeg_loader::is_jpeg(&request.path) {
-                        jpeg_loader::load(&request.path)
-                            .map(|image| {
-                                create_thumbnail(&image,)
-                            })
+                        jpeg_loader::load(
+                            &request.path,
+                            jpeg_loader::LoadMode::Thumbnail {
+                                 max_width: THUMBNAIL_WIDTH, 
+                                 max_height: THUMBNAIL_HEIGHT, 
+                                },
+                        )
                     } else {
                         image::open(&request.path)
                             .map(|image| {
                                 let thumbnail = image.to_rgba8(); 
-                                create_thumbnail(&thumbnail,)})
+                                create_thumbnail(&thumbnail)
+                            })
                             .map_err(|e| e.to_string())
                     };
-
-                // デコード中にフォルダが変更された
-                if request.generation != worker_generation.load(Ordering::Relaxed){
-                    continue;
-                }
 
                 let _ = result_tx.send(
                     ThumbnailResult {
@@ -110,10 +105,6 @@ impl ThumbnailState {
             let Ok(result) = self.rx.try_recv() else {
                 break;
             };
-            // 古い世代の結果は破棄
-            if result.generation != self.generation {
-                continue;
-            }
 
             self.loading.remove(&result.path);
 
@@ -148,24 +139,24 @@ impl ThumbnailState {
     }
 }
 
+    fn create_thumbnail(
+        image: &image::RgbaImage,
+    ) -> image::RgbaImage {
+        let width = image.width();
+        let height = image.height();
 
-fn create_thumbnail(image: &image::RgbaImage) -> image::RgbaImage {
-    let width = image.width();
-    let height = image.height();
+        let scale = (THUMBNAIL_WIDTH as f32 / width as f32)
+            .min(THUMBNAIL_HEIGHT as f32 / height as f32)
+            .min(1.0);
 
-    let scale = (THUMBNAIL_WIDTH as f32 / width as f32)
-        .min(THUMBNAIL_HEIGHT as f32 / height as f32)
-        .min(1.0);
+        let new_width = (width as f32 * scale).round() as u32;
+        let new_height = (height as f32 * scale).round() as u32;
 
-    let new_width = (width as f32 * scale).round() as u32;
-    let new_height = (height as f32 * scale).round() as u32;
-
-    image::imageops::resize(
-        image, 
-        new_width,
-        new_height,
-        image::imageops::FilterType::Triangle,
-    )
-}
-
+        image::imageops::resize(
+            image, 
+            new_width,
+            new_height,
+            image::imageops::FilterType::Triangle,
+        )
+    }
 

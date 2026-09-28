@@ -23,6 +23,8 @@ impl SubWindow {
 
             self.texture = None; // 前の画像を破棄してメモリ解放
             self.image = None;
+            self.display_texture = None;
+            self.display_texture_size = None;
             self.original_image_size = None;
             self.loading = true;
             self.animation_next_frame_time = None;

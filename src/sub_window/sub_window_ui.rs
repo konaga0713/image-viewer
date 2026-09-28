@@ -16,12 +16,10 @@ impl SubWindow {
         image_cache: &mut ImageCache,     
     )  {
         let ctx = ui.ctx().clone();
-
         // 画像読込結果
         self.process_image_loading(&ctx, image_cache);
 
         if self.resize_pending {
-println!("RESIZE");            
             self.resize_pending = false;
             self.resize_window_to_image(&ctx);
         }
@@ -122,7 +120,7 @@ println!(
 );
  */
         egui::CentralPanel::default().show(ui, |ui| {
-            self.show_texture(ui);
+            self.show_texture(ui, ctx);
             self.update_animation(ctx);
         });
     }
