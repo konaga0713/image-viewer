@@ -118,7 +118,7 @@ impl SubWindow {
             // println!("DFS PREV CHECK = {:?}", previous);
 
             if !Self::get_image_files(&previous, plugin_mgr).is_empty() {
-                println!("DFS PREV FOUND = {:?}", previous);
+                // println!("DFS PREV FOUND = {:?}", previous);
                 return Some(previous);
             }
             dir = previous
@@ -129,30 +129,23 @@ impl SubWindow {
     // ↑ 前のフォルダ
     // ------------------------------------------------------------
     pub fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
-        println!("===== ArrowUp pressed =====");
-        println!("current_path = {:?}", self.current_path);
 
         if let Some(new_dir) = self.previous_directory(plugin_mgr) {
             println!("TREE PREV = {:?}", new_dir);
             self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
-        } else {
-            println!("PREV = None");
-        }
+        } 
     }
 
     // ------------------------------------------------------------
     // ↓ 次のフォルダ
     // ------------------------------------------------------------
     pub fn move_to_next_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
-        println!("===== ArrowDown pressed =====");
-        println!("current_path = {:?}", self.current_path);
+        // println!("===== ArrowDown pressed =====");
+        // println!("current_path = {:?}", self.current_path);
 
         if let Some(new_dir) = self.get_next_directory(plugin_mgr) {
-            println!("NEXT = {:?}", new_dir);
 
             self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
-        } else {
-            println!("NEXT = None");
         }
     }
 

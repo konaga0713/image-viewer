@@ -28,6 +28,7 @@ impl SubWindow {
         // 次フレームの時刻になったらフレームを進める
         if let Some(next_time) = self.animation_next_frame_time {
             if now >= next_time {
+                // println!("[ANIMATION DISPLAY] frame changed");
                 if let Some(delay) = image.next_frame() {
                     self.animation_next_frame_time = Some(now + delay);
                 } else {

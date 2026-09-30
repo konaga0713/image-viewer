@@ -1,6 +1,7 @@
 ///sub_window_image
 
 use super::SubWindow;
+use crate::jpeg_loader;
 
 const MIN_FIT_SCALE: f32 = 0.8;
 
@@ -116,13 +117,13 @@ impl SubWindow {
             } else {
                 image_size * self.zoom_scale
             };
-println!(
-    "[IMAGE] texture={}x{}, available={}x{}",
-    texture.size()[0],
-    texture.size()[1],
-    available_size.x,
-    available_size.y,
-);
+// println!(
+//     "[IMAGE] texture={}x{}, available={}x{}",
+//     texture.size()[0],
+//     texture.size()[1],
+//     available_size.x,
+//     available_size.y,
+// );
 
         // スクロールエリアを配置し、基準を左上に設定
         egui::ScrollArea::both()
@@ -174,33 +175,88 @@ println!(
             target_height,            
         ];
 
-        // 既存の表示用Textureが同じサイズなら再利用
-        if self.display_texture_size == Some(target_size)
-            && self.display_texture.is_some() {
+        let is_animated = image.is_animated();
+        if !is_animated 
+            && self.display_texture_size == Some(target_size) 
+            && self.display_texture.is_some()
+        {
             return;
         }
 
-        println!(
-                "[DISPLAY TEXTURE] {}x{} -> {}x{} scale={}",
-                original_width,
-                original_height,
+        // ***********************************************
+        // JPEG
+        // ***********************************************
+        if jpeg_loader::is_jpeg(&self.current_path) {
+
+            let scaled = match jpeg_loader::load_scaled(
+                &self.current_path,
                 target_width,
                 target_height,
-                scale,
-        );        
+                ) {
+                    Ok(image) => image,
+                    Err(e) => {
+                        eprintln!("[JPEG SCALE ERROR] {}", e);
+                        return;
+                    }
+                };
 
-let start = std::time::Instant::now();
+            // println!(
+            //     "[JPEG SCALE] texture image={}x{}, target={}x{}",
+            //     scaled.width(),
+            //     scaled.height(),
+            //     target_width,
+            //     target_height,
+            // );    
+            // let start = std::time::Instant::now();
+
+            let color_image =
+                egui::ColorImage::from_rgba_unmultiplied(
+                    [
+                        scaled.width() as usize,
+                        scaled.height() as usize,
+                        ],
+                    scaled.as_raw(),
+                );
+
+            // println!("[TIME] JPEG ColorImage: {:?}",start.elapsed());
+            // let start = std::time::Instant::now();
+
+            // 表示用Texture作成
+            self.display_texture = Some(
+                ctx.load_texture(
+                    format!(
+                        "{}-display-{}x{}",
+                        self.current_path.to_string_lossy(),
+                        target_width,
+                        target_height,
+                    ),
+                    color_image,
+                    Default::default(),
+                )
+            );
+
+            // println!("[TIME] JPEG load_texture: {:?}",start.elapsed());
+
+            self.display_texture_size = Some([
+                target_width,
+                target_height,]);
+            return;
+        }
+
+        // ***********************************************
+        // JPEG以外
+        // ***********************************************
 
         // リサイズ
         let resized = image::imageops::resize(
             rgba,
             target_width,
             target_height,
-            image::imageops::FilterType::Nearest,
+            image::imageops::FilterType::Triangle,
         );
 
-println!("[TIME] display resize: {:?}",start.elapsed());
-let start = std::time::Instant::now();
+        // println!("[TIME] display resize: {:?}",start.elapsed());
+        // let start = std::time::Instant::now();
 
         let color_image =
             egui::ColorImage::from_rgba_unmultiplied(
@@ -211,8 +267,9 @@ let start = std::time::Instant::now();
                 resized.as_raw(),
             );
 
-println!("[TIME] display ColorImage: {:?}",start.elapsed());
-let start = std::time::Instant::now();
+
+        // println!("[TIME] display ColorImage: {:?}",start.elapsed());
+        // let start = std::time::Instant::now();
 
         // 表示用Texture作成
         self.display_texture = Some(
@@ -227,7 +284,7 @@ let start = std::time::Instant::now();
                 Default::default(),
             )
         );
-println!("[TIME] display load_texture: {:?}",start.elapsed());
+        // println!("[TIME] display load_texture: {:?}",start.elapsed());
 
         self.display_texture_size = Some(target_size);
 

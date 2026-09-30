@@ -37,7 +37,7 @@ impl AppConfig {
                 return Self::default();
             };
 
-        println!("config path = {:?}", Self::config_path());
+        // println!("config path = {:?}", Self::config_path());
         
         match toml::from_str::<Self>(&data) {
             Ok(config) =>config,
@@ -53,7 +53,7 @@ impl AppConfig {
     }    
 
     pub fn save(&self){
-        println!("config path = {:?}", Self::config_path());        
+        // println!("config path = {:?}", Self::config_path());        
         let Some(path) = Self::config_path()
             else {
                 eprintln!("設定ファイルの保存先を取得できませんでした");

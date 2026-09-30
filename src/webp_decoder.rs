@@ -11,20 +11,13 @@ pub fn load_webp (path: &Path,) -> Result<RgbaImage, Box<dyn std::error::Error>>
         image_webp::WebPDecoder::new(Cursor::new(&data))?;
 
     let (width, height) = decoder.dimensions();    
-    println!("WebP dimensions: {} x {}", width, height);
 
     let has_alpha = decoder.has_alpha();
-    println!("WebP has alpha: {}",decoder.has_alpha());
 
     let output_size = decoder
         .output_buffer_size()
         .ok_or("WebP output buffer size is too large")?;
     
-    println!(
-        "WebP output buffer size: {}",
-        output_size
-    );
-
     // WebP自身の色形式でデコード
     let mut decoded = vec![0u8; output_size];
     decoder.read_image(&mut decoded)?;

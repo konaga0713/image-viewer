@@ -24,14 +24,10 @@ impl WebpAnimation {
             WebPDecoder::new(Cursor::new(&data))?;
         
         let (width, height) = decoder.dimensions();    
-        println!("WebP dimensions: {} x {}", width, height);
 
         // WebPがアニメーションか確認
         let is_animated = decoder.is_animated();
-        println!("WebP animated: {}", is_animated);
-
         let has_alpha = decoder.has_alpha();
-        println!("WebP has alpha: {}", has_alpha);
 
         // --------------------------------------------------
         // 静止WebP

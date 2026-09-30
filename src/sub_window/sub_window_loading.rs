@@ -31,12 +31,6 @@ impl SubWindow {
         
         // Cache検索
         if let Some(rgba) = image_cache.get(&self.current_path).cloned() {
-    
-    println!(
-        "[CACHE HIT] {}x{}",
-        rgba.width(),
-        rgba.height()
-    );
 
             let image = StaticImage::new(
                 image::DynamicImage::ImageRgba8(rgba)
@@ -91,13 +85,6 @@ impl SubWindow {
                 rgba.as_raw(),
             );
 
-println!(
-    "[TEXTURE] {}x{}",
-    rgba.width(),
-    rgba.height()
-);
-
-
         self.texture = Some(
             ctx.load_texture(
                 self.current_path.to_string_lossy(),
@@ -121,16 +108,14 @@ println!(
     pub fn process_image_loading(&mut self, ctx: &egui::Context, image_cache: &mut ImageCache,) {
         // GIFなど、ImageContent内部の非同期読み込み
         let mut gif_changed = false;
-let start = std::time::Instant::now();
 
         if let Some(image) = &mut self.image {
             gif_changed = image.update_loading();
             self.loading = image.is_loading();
-println!("decode:{:?}",start.elapsed());
         }
 
         if gif_changed {
-            println!("[SubWindow] GIF image changed");            
+            // println!("[SubWindow] GIF image changed");            
             if let Some(image) = &self.image {
                 let rgba = image.current_image();
 
@@ -152,11 +137,11 @@ println!("decode:{:?}",start.elapsed());
                 if self.original_image_size.is_none(){
                     let image_size = image.size();                    
 
-                    println!(
-                        "[SubWindow] first frame: {}x{}",
-                        image_size.x,
-                        image_size.y
-                    );
+                    // println!(
+                    //     "[SubWindow] first frame: {}x{}",
+                    //     image_size.x,
+                    //     image_size.y
+                    // );
 
                     self.original_image_size = Some(image.size());
                     self.resize_window_to_image(ctx);
@@ -176,16 +161,8 @@ println!("decode:{:?}",start.elapsed());
 
             match result {
                 Ok(image) => {
-let total_start = std::time::Instant::now();
                     let rgba = image.current_image().clone();
                     
-    println!(
-        "[SubWindow] loaded image: {}x{}",
-        rgba.width(),
-        rgba.height()
-    );
-let start = std::time::Instant::now();
-
                     // ImageContentを設定
                     self.original_image_size = Some(image.size());
                     self.image = Some(image);
@@ -207,7 +184,6 @@ let start = std::time::Instant::now();
                     self.resize_pending = true;
 
                     self.loading = false;
-println!("total:{:?}",total_start.elapsed());
                 } 
 
                 Err(err_msg) => {

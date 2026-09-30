@@ -17,7 +17,7 @@ pub enum GifLoadMessage {
 
 
 pub fn load_gif_worker(path: PathBuf, tx: Sender<GifLoadMessage>, ctx: egui::Context,) {
-println!("[GIF WORKER] START: {:?}", path);    
+    // println!("[GIF WORKER] START: {:?}", path);    
     std::thread::spawn(move || {
         let result = (|| -> Result<(), Box<dyn std::error::Error>> {
             let file = std::fs::File::open(&path)?;
@@ -55,7 +55,7 @@ println!("[GIF WORKER] START: {:?}", path);
 
         match result {
             Ok(()) => {
-println!("[GIF WORKER] sending Finished");
+                // println!("[GIF WORKER] sending Finished");
                 if let Err(e) = tx.send(GifLoadMessage::Finished) {
                     eprintln!("[GIF WORKER] Finished send failed: {}",e);
                 } else {

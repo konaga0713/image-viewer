@@ -55,7 +55,7 @@ impl FolderNode {
         dirs.sort_by_key(|a| {
             a.file_name()
                 .map(|v| v.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
+                .unwrap_or_default()
         });
 
         self.children = dirs
@@ -131,7 +131,7 @@ impl FolderTree {
             visible_items: Vec::new(),
             last_notified_path: selected_path,
             visible_dirty: true,
-            scroll_to_selected: false,
+            scroll_to_selected: true,
         };
 
         // selected_pathまでの経路を展開
@@ -334,6 +334,7 @@ impl FolderTree {
 
     /// selected_pathまでの親をすべて展開する
     fn expand_path_to(&mut self, target: &Path) {
+
         if self.root.path == target {
             return;
         }
@@ -343,16 +344,28 @@ impl FolderTree {
         };
 
         let mut current = self.root.path.clone();
+        let mut node = &mut self.root;
 
         for component in relative.components() {
-            current.push(component);
 
-            let Some(node) = self.root.find_mut(&current) else {
-                return;
-            };
             node.load_children();
             node.is_expanded = true;
-        }
+
+            current.push(component);
+
+            let Some(next) = node.children.iter_mut()
+                .find(|c| c.path == current)
+            else {
+                return;
+            };
+
+            node = next;
+
+        }    
+        
+        node.load_children();
+        node.is_expanded = true;
+        
         self.visible_dirty = true;
     } 
 
@@ -368,6 +381,7 @@ impl FolderTree {
         self.selected_path = selected_path.clone();
         self.expand_path_to(&selected_path);
         self.rebuild_visible_items();
+        self.scroll_to_selected = true;
     } 
 
     fn select_and_toggle(&mut self, path: PathBuf) {

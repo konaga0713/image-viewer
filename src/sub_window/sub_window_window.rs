@@ -65,12 +65,12 @@ impl SubWindow {
         // 拡大率を適用した目標の画像サイズ
         let scaled_image_size = original_size * self.zoom_scale;
 
-println!(
-    "fit detail: original={:?}, zoom={}, scaled={:?}",
-    original_size,
-    self.zoom_scale,
-    scaled_image_size
-);
+        // println!(
+        //     "fit detail: original={:?}, zoom={}, scaled={:?}",
+        //     original_size,
+        //     self.zoom_scale,
+        //     scaled_image_size
+        // );
 
     if self.fit_to_screen {
         // 自動縮小ON: 利用可能な内部描画エリアに合わせて縮小
@@ -83,14 +83,6 @@ println!(
         // 小さい画像は拡大しない
         let scale = scale_x.min(scale_y).min(1.0);
 
-println!(
-    "fit detail: max={},{} scale_x={} scale_y={} scale={}",
-    max_image_width,
-    max_image_height,
-    scale_x,
-    scale_y,
-    scale
-);            
         // サブウィンドウサイズ
         let window_size = egui::vec2(
             ((scaled_image_size.x * scale) + SIDE_MARGIN * 2.0)
@@ -98,13 +90,6 @@ println!(
             ((scaled_image_size.y * scale) + TOP_MARGIN)
                 .max(MIN_WINDOW_HEIGHT),
         );
-println!(
-    "fit: available={},{} window={},{}",
-    available_outer_width,
-    available_outer_height,
-    window_size.x,
-    window_size.y
-);
             // ウィンドウサイズ変更
             ctx.send_viewport_cmd(
             egui::ViewportCommand::InnerSize(window_size),  
@@ -135,15 +120,6 @@ println!(
                 (final_outer_height - decoration.y).max(MIN_WINDOW_HEIGHT),
             );
 
-    println!(
-        "original: image={},{} available={},{} final={},{}",
-        scaled_image_size.x,
-        scaled_image_size.y,
-        available_outer_width,
-        available_outer_height,
-        final_inner.x,
-        final_inner.y
-    );          
             ctx.send_viewport_cmd(
             egui::ViewportCommand::InnerSize(final_inner),  
             );
@@ -171,13 +147,13 @@ println!(
         let overflow_x = (outer_rect.max.x - work_rect.max.x).max(0.0);
         let overflow_y = (outer_rect.max.y - work_rect.max.y).max(0.0);
 
-        println!(
-    "correction check: outer_max={:?}, work_max={:?}, overflow=({:.1},{:.1})",
-    outer_rect.max,
-    work_rect.max,
-    overflow_x,
-    overflow_y
-);
+        //         println!(
+        //     "correction check: outer_max={:?}, work_max={:?}, overflow=({:.1},{:.1})",
+        //     outer_rect.max,
+        //     work_rect.max,
+        //     overflow_x,
+        //     overflow_y
+        // );
         // はみ出していなければ補正終了
         if overflow_x <= 0.0 && overflow_y <= 0.0 {
             return;
@@ -213,15 +189,15 @@ println!(
             (allowed_outer_size.y - decoration.y).max(100.0),
         );
 
-        println!(
-        "correction: outer_size={:?}, \
-        allowed_outer={:?}, decoration={:?}, \
-        corrected_inner={:?}",
-        outer_rect.size(),
-        allowed_outer_size,
-        decoration,
-        corrected_inner,
-    );
+    //     println!(
+    //     "correction: outer_size={:?}, \
+    //     allowed_outer={:?}, decoration={:?}, \
+    //     corrected_inner={:?}",
+    //     outer_rect.size(),
+    //     allowed_outer_size,
+    //     decoration,
+    //     corrected_inner,
+    // );
 
         // 位置は変更しない。
         // サイズだけ変更する。

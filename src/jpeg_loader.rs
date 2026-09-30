@@ -15,16 +15,18 @@ pub fn load(path: &Path, mode: LoadMode,) -> Result<image::RgbaImage, String> {
 
     match mode {
         LoadMode::Thumbnail { max_width, max_height } => {
-            load_thumbnail(&data, max_width, max_height)
+            // println!("[THUMBNAIL] load_scaled_from_data");
+            load_scaled_from_data(&data, max_width, max_height)
         }
         LoadMode::Full => {
+            // println!("[MAIN IMAGE] load_scaled_from_data");
             load_full(&data)
         }
     }        
 }
 
-// サムネイル読み込み
-fn load_thumbnail(data: &[u8], max_width: u32, max_height: u32
+// JPEG読み込み
+fn load_scaled_from_data(data: &[u8], max_width: u32, max_height: u32
 ) -> Result<image::RgbaImage, String> {
 
     // TurboJPEGの縮小デコード
@@ -67,7 +69,21 @@ fn load_thumbnail(data: &[u8], max_width: u32, max_height: u32
         format: turbojpeg::PixelFormat::RGBA,
     };
 
+println!(
+    "[JPEG SCALE] original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
+    header.width,
+    header.height,
+    max_width,
+    max_height,
+    scale,
+    scaling_factor,
+);
+
+    // let start = std::time::Instant::now();
     let res = decompressor.decompress(data, image_buf);
+    
+    // println!("[TIME] turbojpeg scaled decompress: {:?}",   start.elapsed());
+
     if let Err(ref err) = res {
         let is_empty = pixels.iter().all(|&p| p == 0);
         if is_empty {
@@ -75,6 +91,7 @@ fn load_thumbnail(data: &[u8], max_width: u32, max_height: u32
         }
     }
 
+    // let start = std::time::Instant::now();
     let image = image::RgbaImage::from_raw(
         width as u32, 
         height as u32, 
@@ -82,13 +99,46 @@ fn load_thumbnail(data: &[u8], max_width: u32, max_height: u32
         )
         .ok_or_else(|| {"バッファからRgbaImageの生成に失敗しました".to_string()
     })?;
+    
+    // println!("[TIME] scaled RgbaImage::from_raw: {:?}",  start.elapsed());
+    // println!(
+    //     "[JPEG SCALE] decoded={}x{}, target={}x{}",
+    //     image.width(),
+    //     image.height(),
+    //     max_width,
+    //     max_height,
+    // );
 
-    Ok(resize_thumbnail(
-        &image,
+    let start = std::time::Instant::now();
+    let result = resize_to_fit(
+        &image, 
+        max_width, 
+        max_height
+        );
+
+    println!(
+        "[JPEG SCALE] scaled resize: {:?}, original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
+        start.elapsed(),
+        header.width,
+        header.height,
         max_width,
         max_height,
-    ))
+        scale,
+        scaling_factor,
+    );
 
+    Ok(result)
+
+}
+
+// JPEG画像読込
+pub fn load_scaled(path: &Path, max_width: u32, max_height: u32
+) -> Result<image::RgbaImage, String> {
+    println!("load_scaled load_scaled_from_data"); 
+    let data = std::fs::read(path)
+        .map_err(|e| format!("JPEG読み込み失敗: {}", e))?;
+
+    load_scaled_from_data (&data, max_width, max_height)    
 }
 
 // 通常画像読み込み
@@ -105,7 +155,7 @@ fn load_full(data: &[u8]) -> Result<image::RgbaImage, String> {
 
 }
 
-fn resize_thumbnail(
+fn resize_to_fit(
     image: &image::RgbaImage,
     max_width: u32,
     max_height: u32,
@@ -151,8 +201,11 @@ fn decompress_turbojpeg_tolerant(data: &[u8]) -> Result<image::RgbaImage, String
         format: turbojpeg::PixelFormat::RGBA,
     };
 
+let start = std::time::Instant::now();
     // 復号の実行（フラグで不完全なストリームの受容を許可）
     let res = decompressor.decompress(data, image_buf);
+
+// println!("[TIME] turbojpeg decompress: {:?}", start.elapsed());
 
     if let Err(ref err) = res {
         let is_empty = pixels.iter().all(|&p| p == 0);
@@ -161,8 +214,13 @@ fn decompress_turbojpeg_tolerant(data: &[u8]) -> Result<image::RgbaImage, String
         }
     }
 
-    image::RgbaImage::from_raw(width as u32, height as u32, pixels)
-        .ok_or_else(|| "バッファからの RgbaImage 生成に失敗しました".to_string())
+// let start = std::time::Instant::now();    
+    let result = image::RgbaImage::from_raw(width as u32, height as u32, pixels)
+        .ok_or_else(|| "バッファからの RgbaImage 生成に失敗しました".to_string());
+
+// println!("[TIME] RgbaImage::from_raw: {:?}", start.elapsed());
+
+    result
 
 } 
 

@@ -36,7 +36,6 @@ impl GifAnimation {
     }
 
     pub fn load_async(path: PathBuf, ctx: egui::Context,) -> Self {
-println!("[GIF] load_async START: {:?}", path);
 
         let (tx, rx) = std::sync::mpsc::channel();
 
@@ -50,14 +49,14 @@ println!("[GIF] load_async START: {:?}", path);
             loading: true,
             rx: Some(rx),
         };
-println!(
-        "[GIF] load_async END: loading={}, rx={}, frames={}, image_x={}, image_y={} ",
-        gif.loading,
-        gif.rx.is_some(),
-        gif.frames.len(),
-        gif.display_image.width(),
-        gif.display_image.height(),
-    );
+// println!(
+//         "[GIF] load_async END: loading={}, rx={}, frames={}, image_x={}, image_y={} ",
+//         gif.loading,
+//         gif.rx.is_some(),
+//         gif.frames.len(),
+//         gif.display_image.width(),
+//         gif.display_image.height(),
+//     );
 
         gif
     }
@@ -107,14 +106,13 @@ println!(
         if !self.loading {
             return false;
         }
-println!(
-        "[GIF] process_loading_internal: rx_exists={}",
-        self.rx.is_some()
-    );
+// println!(
+//         "[GIF] process_loading_internal: rx_exists={}",
+//         self.rx.is_some()
+//     );
 
         let Some(rx) = self.rx.take()
         else {
-println!("[GIF] RX is NONE");            
             return false;
         };
 
@@ -122,7 +120,7 @@ println!("[GIF] RX is NONE");
         let mut finished = false;
 
         while let Ok(message) = rx.try_recv() {
-println!("[GIF] MESSAGE RECEIVED");            
+
             match message {
                 GifLoadMessage::Frame { image , delay } => {
                     self.frames.push(image);
@@ -147,14 +145,6 @@ println!("[GIF] MESSAGE RECEIVED");
                 }
             }
         }
-
-println!(
-        "[GIF] process result: changed={}, finished={}, loading={}, frames={}",
-        changed,
-        finished,
-        self.loading,
-        self.frames.len()
-    );
 
         // まだ読み込み中ならReceiverを戻す
         if !finished {
@@ -245,6 +235,13 @@ impl ImageContent for GifAnimation {
     /// 次のフレームへ進む
     /// アニメーションでない場合は None
     fn next_frame(&mut self) -> Option<Duration> {
+        // println!(
+        //         "[GIF] next_frame START: current={}, frames={}, loading={}",
+        //         self.current_frame,
+        //         self.frames.len(),
+        //         self.loading
+        //     );        
+
         if self.frames.is_empty() {
             return None;
         }
@@ -259,9 +256,13 @@ impl ImageContent for GifAnimation {
             (self.current_frame + 1) % self.frames.len();
 
         self.update_display_image();
-        self.delays
+        
+        let delay = self.delays
             .get(self.current_frame)
-            .copied()    
+            .copied();
+
+        delay
+
     }
       /// 現在フレームの表示時間
     fn current_delay(&self) -> Option<std::time::Duration> {

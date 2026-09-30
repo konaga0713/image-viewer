@@ -53,10 +53,7 @@ impl MyApp {
                 .unwrap_or_else(|_| PathBuf::from("."))
             });
 
-        let tree_root = current_dir
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| current_dir.clone());
+        let tree_root = Self::get_tree_root(&current_dir);
 
         let folder_tree = FolderTree::new(
             tree_root,

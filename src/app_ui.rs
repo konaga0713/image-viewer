@@ -102,11 +102,10 @@ impl MyApp {
                 let current_dir = self.current_dir.clone();
                 let tree_root = Self::get_tree_root(&current_dir);
 
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    if let Some(path) = self.folder_tree.ui(ui) {
-                        self.change_current_dir(path);
-                    }
-                });
+                if let Some(path) = self.folder_tree.ui(ui) {
+                    self.change_current_dir(path);
+                }
+                
             });
     }
 
@@ -199,10 +198,10 @@ impl MyApp {
                         ui.close();
                     }
                     if ui.button("プログラムから開く").clicked() {
-                        println!(
-                            "[OPEN_WITH] path={:?}",
-                            path
-                        );
+                        // println!(
+                        //     "[OPEN_WITH] path={:?}",
+                        //     path
+                        // );
 
                         if let Err(err) = crate::windows_shell::open_with(path) {
                             eprintln!("[OPEN_WITH] error: {}", err);
@@ -211,10 +210,10 @@ impl MyApp {
                     }
                     ui.separator();
                     if ui.button("プロパティ").clicked() {
-                        println!(
-                            "[OPEN_WITH] path={:?}",
-                            path
-                        );
+                        // println!(
+                        //     "[OPEN_WITH] path={:?}",
+                        //     path
+                        // );
 
                         self.property_path = Some(path.clone());
                         self.show_property = true;
@@ -285,16 +284,11 @@ impl MyApp {
         }
     }
 
-    fn get_tree_root(path: &PathBuf) -> PathBuf {
-        let mut components = path.components();
-        let Some(prefix) = components.next() else {
-            return path.clone();
-        };
-        let Some(root) = components.next() else {
-            return path.clone();
-        };
-
-        PathBuf::from(prefix.as_os_str()).join(root.as_os_str())
+    pub fn get_tree_root(path: &PathBuf) -> PathBuf {
+        path.ancestors()
+            .last()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| path.to_path_buf())
     }
 
     fn change_current_dir(&mut self, path: PathBuf) {

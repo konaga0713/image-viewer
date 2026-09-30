@@ -91,7 +91,7 @@ impl SubWindow {
                 ui.separator();
 
                 if ui.button("画像保存 ctrl + s").clicked() {
-                    println!("画像保存");
+                    // println!("画像保存");
 
                     self.request_save();
                     ui.close();
@@ -110,18 +110,10 @@ impl SubWindow {
     // 画像表示エリア（原寸・自動縮小・左上基準）
     // ------------------------------------------------------------
     fn show_image_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,) {
-/*
-println!(
-    "[SUBWINDOW] id={:?}, path={:?}, ptr={:p}, available={:?}",
-    self.id,
-    self.current_path,
-    self,
-    ui.available_size()
-);
- */
+
         egui::CentralPanel::default().show(ui, |ui| {
-            self.show_texture(ui, ctx);
             self.update_animation(ctx);
+            self.show_texture(ui, ctx);
         });
     }
 

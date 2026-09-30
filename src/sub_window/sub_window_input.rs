@@ -59,7 +59,7 @@ impl SubWindow {
         // ctrl + s 画像保存
         // ------------------------------------------------------------
         if ctrl && ctx.input(|i| i.key_pressed(egui::Key::S)) {
-            println!("ctrl + s pressed");
+            // println!("ctrl + s pressed");
 
             self.request_save();
         }
