@@ -61,9 +61,11 @@ impl SubWindow {
                 .map_err(|e| e.to_string());
 
             let _ = tx.send((path, result));
+
             // 読み込み完了後にGUIを再描画
             ctx.request_repaint();            
         });
+
     }
 
     pub fn update_texture(&mut self, ctx: &egui::Context) {

@@ -198,14 +198,23 @@ impl MyApp {
                         ui.close();
                     }
                     if ui.button("プログラムから開く").clicked() {
-                        // println!(
-                        //     "[OPEN_WITH] path={:?}",
-                        //     path
-                        // );
-
-                        if let Err(err) = crate::windows_shell::open_with(path) {
-                            eprintln!("[OPEN_WITH] error: {}", err);
+                        #[cfg(target_os = "windows")]
+                        {
+                            if let Err(err) = crate::windows_shell::open_with(path) {
+                                eprintln!("[OPEN_WITH] error: {}", err);
+                            }
                         }
+                        #[cfg(target_os = "linux")]
+                        {
+                            use std::process::Command;
+                            if let Err(err) = Command::new("xdg-open")
+                                .arg(path)
+                                .spawn()
+                                {
+                                    eprintln!("[OPEN_WITH] error: {}", err);
+                                }
+                        }
+
                         ui.close();
                     }
                     ui.separator();

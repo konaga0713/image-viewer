@@ -17,6 +17,7 @@ mod static_image;
 mod sub_window;
 mod webp_animation;
 mod webp_decoder;
+#[cfg(target_os = "windows")]
 mod windows_shell;
 
 use crate::app::MyApp;
@@ -35,7 +36,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "RIX: Image Explorer App",
         options,
-        Box::new(|cc| Ok(Box::new(MyApp::new(cc)))),
+        Box::new(|cc| {
+            Ok(Box::new(MyApp::new(cc)))
+        }),
     )
 }
 

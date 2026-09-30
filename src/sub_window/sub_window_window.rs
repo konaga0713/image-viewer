@@ -131,6 +131,7 @@ impl SubWindow {
     /// Windowsの作業領域を超えていないか確認し、
     /// 超過している場合だけウィンドウサイズを縮小する。
     fn correct_window_size_to_work_area(&mut self, ctx: &egui::Context) {
+
         let Some(outer_rect) = 
             ctx.input(|i| i.viewport().outer_rect) 
         else {
@@ -147,13 +148,18 @@ impl SubWindow {
         let overflow_x = (outer_rect.max.x - work_rect.max.x).max(0.0);
         let overflow_y = (outer_rect.max.y - work_rect.max.y).max(0.0);
 
-        //         println!(
-        //     "correction check: outer_max={:?}, work_max={:?}, overflow=({:.1},{:.1})",
-        //     outer_rect.max,
-        //     work_rect.max,
-        //     overflow_x,
-        //     overflow_y
-        // );
+        println!(
+            "outer={:?} work={:?}",
+            outer_rect,
+            work_rect
+        );
+
+        println!(
+            "overflow=({}, {})",
+            overflow_x,
+            overflow_y
+        );
+        
         // はみ出していなければ補正終了
         if overflow_x <= 0.0 && overflow_y <= 0.0 {
             return;
@@ -204,7 +210,6 @@ impl SubWindow {
         ctx.send_viewport_cmd(
             egui::ViewportCommand::InnerSize(corrected_inner)
         );
-
     }
 
     /// タスクバー等を除いた、現在のサブウィンドウが存在する
@@ -279,8 +284,8 @@ impl SubWindow {
         #[cfg(not(target_os = "windows"))]
         {
             let monitor_size = monitor_size?;
-            Some(egui::REct::from_min_size(
-                egui::Pos2::Zero,
+            Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
                 monitor_size,
             ))
         }
