@@ -55,6 +55,10 @@ impl ThumbnailState {
             // サムネイルワーカースレッド
         std::thread::spawn(move || {
             while let Ok(request) = request_rx.recv() {
+                // フォルダ切替後に古いキューを順番にデコードしない。
+                if request.generation != worker_generation.load(Ordering::Relaxed) {
+                    continue;
+                }
 
                 let result = 
                     if jpeg_loader::is_jpeg(&request.path) {
@@ -106,6 +110,10 @@ impl ThumbnailState {
                 break;
             };
 
+            if result.generation != self.current_generation.load(Ordering::Relaxed) {
+                continue;
+            }
+            
             self.loading.remove(&result.path);
 
             match result.image {

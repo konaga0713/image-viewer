@@ -150,7 +150,7 @@ impl FolderTree {
         }
 
         let mut clicked_path = None;
-        let visible_items = self.visible_items.clone();
+        let visible_items = std::mem::take(&mut self.visible_items);
         let selected_path = self.selected_path.clone();
 
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -197,6 +197,7 @@ impl FolderTree {
         });
 
         self.scroll_to_selected = false;
+        self.visible_items = visible_items;
 
         if let Some(path) = clicked_path {
             self.select_path(path);

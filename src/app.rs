@@ -14,6 +14,7 @@ const IMAGE_CACHE_CAPACITY: usize = 20;
 pub struct MyApp {
     pub current_dir: PathBuf,
     pub files: Vec<PathBuf>,
+    pub image_files: Vec<PathBuf>,
     pub selected_file: Option<PathBuf>,
     pub sub_windows: Vec<SubWindow>,
     pub plugin_mgr: Arc<PluginManager>,
@@ -63,6 +64,7 @@ impl MyApp {
         let mut app = Self {
             current_dir,
             files: Vec::new(),
+            image_files: Vec::new(),
             selected_file: None,
             sub_windows: Vec::new(),
             plugin_mgr: Arc::new(plugin_mgr),
@@ -92,25 +94,25 @@ impl MyApp {
                 .collect();
             self.files.sort();
 
+            // 拡張子判定とファイル属性確認はフォルダ切り替え時のみ実施
+            self.image_files = self.files
+                .iter()
+                .filter(|path| path.is_file() && self.plugin_mgr.can_decode(path))
+                .cloned()
+                .collect();
+
             // 現在フォルダに存在しないサムネイルを削除
             self.thumbnail.textures
                 .retain(|path, _| path.exists());
 
-            // 現在フォルダに存在しない処理状態を削除
-            self.thumbnail.loading
-                .retain(|path| path.exists());
+            // 現在フォルダ分を再登録
+            self.thumbnail.loading.clear();
+            // self.thumbnail.cache.clear();
             self.thumbnail.failed
                 .retain(|path| path.exists());
 
             // 現在フォルダの画像をサムネイル処理キューへ追加
-            for path in &self.files {
-                if !path.is_file() {
-                    continue;
-                }
-                if !self.plugin_mgr.can_decode(path) {
-                    continue;
-                }
-
+            for path in &self.image_files {
                 if self.thumbnail.textures.contains_key(path) {
                     continue;
                 }
@@ -141,14 +143,26 @@ impl MyApp {
         // メイン画面で画像を選択するたびに、新しいサブ画面を作成
         let id = egui::ViewportId::from_hash_of((path.clone(), self.sub_windows.len(), std::time::Instant::now()));
 
-    // println!(
-    //     "[OPEN_SUBWINDOW] id={:?}, path={:?}, count_before={}",
-    //     id,
-    //     path,
-    //     self.sub_windows.len()
-    // );
+        let directory_files = if path.parent() == Some(self.current_dir.as_path())
+            && self.image_files.iter().any(|candidate| candidate == &path)
+        {
+            self.image_files.clone()
+        } else {
+            path.parent()
+                .map(|parent| 
+                    SubWindow::get_image_files(parent, &self.plugin_mgr))
+                .unwrap_or_default()
+        };
 
-        self.sub_windows.push(SubWindow::new(id, path, self.auto_fit_option, self.plugin_mgr.clone(), &ctx.clone(), &mut self.image_cache));
+        self.sub_windows.push(SubWindow::new(
+            id,
+            path,
+            directory_files,
+            self.auto_fit_option,
+            self.plugin_mgr.clone(),
+            ctx,
+            &mut self.image_cache,
+        ));    
 
     // println!(
     //     "[OPEN_SUBWINDOW] count_after={}",

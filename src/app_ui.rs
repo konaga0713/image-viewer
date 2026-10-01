@@ -137,17 +137,21 @@ impl MyApp {
             // 横に何個並べられるか
             let columns = ((available_width / THUMBNAIL_ITEM_WIDTH).floor() as usize).max(1);
 
-            let image_files: Vec<PathBuf> = self.get_display_image_files();
+            let row_count = self.image_files.len().div_ceil(columns);
             let scroll_to_top = self.thumbnail.scroll_to_top;
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            let row_height = THUMBNAIL_FRAME_SIZE.y + 20.0 + ui.spacing().item_spacing.y;
+            egui::ScrollArea::vertical().show_rows(ui, row_height, row_count, |ui, rows|{
                 if scroll_to_top {
                     ui.scroll_to_cursor(Some(egui::Align::TOP));
                 }
-                for row in image_files.chunks(columns) {
+                for row_index in rows {
+                    let start = row_index * columns;
+                    let end = (start + columns).min(self.image_files.len());
+                    let row = &self.image_files[start..end].to_vec();
                     ui.horizontal(|ui | {
                         for path in row {
-                            self.show_thumbnail(ui, path, ctx,);
+                            self.show_thumbnail(ui, &path, ctx,);
                         }
                     });
                 }

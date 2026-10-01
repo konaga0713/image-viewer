@@ -38,6 +38,8 @@ impl SubWindow {
 
         // 回転後の画像サイズを保存
         self.original_image_size = Some(image.size());
+        self.display_texture = None; // 表示用Textureをクリアして再生成
+        self.display_texture_size = None; // 表示用Textureサイズをクリア
         if self.fit_to_screen {
             self.resize_window_to_image(ctx);
         }
@@ -76,6 +78,8 @@ impl SubWindow {
 
         // 回転後の画像サイズを保存
         self.original_image_size = Some(image.size());
+        self.display_texture = None;
+        self.display_texture_size = None;
         if self.fit_to_screen {
             self.resize_window_to_image(ctx);
         }
@@ -186,7 +190,8 @@ impl SubWindow {
         // ***********************************************
         // JPEG
         // ***********************************************
-        if jpeg_loader::is_jpeg(&self.current_path) {
+        if jpeg_loader::is_jpeg(&self.current_path) 
+            && !image.is_modified() {
 
             let scaled = match jpeg_loader::load_scaled(
                 &self.current_path,

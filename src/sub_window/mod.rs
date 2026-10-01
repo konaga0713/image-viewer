@@ -48,6 +48,7 @@ impl SubWindow {
     pub fn new(
         id: egui::ViewportId,
         path: PathBuf,
+        directory_files: Vec<PathBuf>,
         fit_to_screen: bool, 
         plugin_mgr: Arc<PluginManager>,
         ctx: &egui::Context,
@@ -55,14 +56,6 @@ impl SubWindow {
     ) -> Self {
         let (tx, rx) = channel();
 
-        // 同一ディレクトリ内のファイル一覧を取得（矢印キー移動用）
-        let  directory_files = 
-            if let Some(parent) = path.parent() {
-                Self::get_image_files(parent, &plugin_mgr)
-            } else {
-                Vec::new()
-            };
-        
         let image_index = directory_files.iter().position(|p| p == &path).unwrap_or(0);
 
         let mut sub_window = Self {
