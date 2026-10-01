@@ -51,22 +51,42 @@ impl MyApp {
 
             let viewport_builder = egui::ViewportBuilder::default()
                 .with_title(format!("Sub Window - {}", filename));
-            
-            ctx.show_viewport_immediate(
-                sub_win.id,
-                viewport_builder,
-                |sub_ui, class| {
-                    if class == egui::ViewportClass::EmbeddedWindow {
-                        return;
-                    }
 
-                    sub_win.ui(sub_ui, &self.plugin_mgr, &mut self.image_cache);
-                    if sub_ui.ctx().input(|i| i.viewport().close_requested()) {
-                        keep_open = false;
-                    }
-                },
-            );
-            keep_open
+            #[cfg(target_os = "windows")]
+            {
+                // Windowsでは、サブウィンドウのタイトルバーにファイル名を表示するために、ViewportBuilderを使用してサブウィンドウを作成します。
+                // ただし、Windowsでは、ViewportBuilderを使用すると、サブウィンドウが閉じられたときに自動的に削除されないため、retain_mutでサブウィンドウを保持する必要があります。
+                ctx.show_viewport_immediate(
+                    sub_win.id,
+                    viewport_builder,
+                    |sub_ui, class| {
+                        if class == egui::ViewportClass::EmbeddedWindow {
+                            return;
+                        }
+                        sub_win.ui(sub_ui, &self.plugin_mgr, &mut self.image_cache);
+                        if sub_ui.ctx().input(|i| i.viewport().close_requested()) {
+                            keep_open = false;
+                        }
+                    },
+                );
+            }
+            #[cfg(not(target_os = "windows"))]
+            {               
+
+                egui::Window::new(format!(
+                    "Sub Window - {}",
+                    filename
+                ))
+                .open(&mut keep_open)
+                .show(ctx, |ui| {
+                    sub_win.ui(
+                        ui,
+                        &self.plugin_mgr,
+                        &mut self.image_cache,
+                    );
+                });
+            }
+                keep_open
         });
     }
 
