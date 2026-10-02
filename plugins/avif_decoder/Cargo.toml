@@ -1,0 +1,13 @@
+[package]
+name = "avif-decoder-plugin"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "avif_decoder_plugin"
+crate-type = ["cdylib"]
+
+[dependencies]
+egui = "0.36.1"
+image = { version = "0.24", features = ["avif-decoder"] }
+pkg-config = "0.3.34"
