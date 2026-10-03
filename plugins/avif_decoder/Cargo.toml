@@ -9,5 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 egui = "0.36.1"
-image = { version = "0.24", features = ["avif-decoder"] }
+image = "0.24"
+
+[build-dependencies]
 pkg-config = "0.3.34"

@@ -305,7 +305,7 @@ impl MyApp {
         self.open_sub_window(path.to_path_buf(), ctx);
     }
 
-        fn show_property(&mut self, ctx: &egui::Context,) {
+    fn show_property(&mut self, ctx: &egui::Context,) {
         if self.show_property {
             if let Some(path) = &self.property_path {
                 ImageProperty::show(

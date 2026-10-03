@@ -32,26 +32,57 @@ impl PluginManager {
 
     /// plugins ディレクトリから動的ライブラリ (.dll / .so) を動的にロード
     pub fn load_plugins(&mut self, plugin_dir: &Path) {
+        eprintln!("[plugin] searching directory: {}", plugin_dir.display());
         if !plugin_dir.exists() {
             return;
         }
 
-        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_file() {
-                    unsafe {
-                        if let Ok(lib) = Library::new(&path) {
-                            if let Ok(func) = 
-                                lib.get::<Symbol<CreatePluginFn>>(b"create_plugin") {
-                                self.plugins.push(func());
-                                self._libs.push(lib);
-                            }
-                        }
-                    }
-                }
+        let entries = match std::fs::read_dir(plugin_dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                eprintln!("[plugin] failed to read directory: {}", e);
+                return;
             }
+        };
+
+        for entry in entries{
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(e) => {
+                    eprintln!("[plugin] failed to read entry: {}", e);
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            eprintln!("[plugin] trying library: {}", path.display());
+            unsafe {
+                let lib = match Library::new(&path) {
+                    Ok(lib) => lib,
+                    Err(e) => {
+                        eprintln!("[plugin] failed to load library {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+                let func: Symbol<CreatePluginFn> = match lib.get(b"create_plugin") {
+                    Ok(func) => func,
+                    Err(e) => {
+                        eprintln!("[plugin] failed to find symbol in {}: {}", path.display(), e);
+                        continue;
+                    }
+                };
+
+                let plugin = func();
+                eprintln!("[plugin] loaded plugin: {} (supports: {:?})", path.display(), plugin.supported_extensions());
+                self.plugins.push(plugin);
+                self._libs.push(lib); // ライブラリを保持して解放されない   
+            }
+            eprintln!("[plugin] {} plugin(s) loaded", self.plugins.len());
         }
+        
     }    
 
     /// 拡張子に応じたデコードを試行
@@ -109,10 +140,20 @@ impl PluginManager {
         // 4. プラグインから検索
         for plugin in &self.plugins {
             if plugin.supported_extensions().contains(&ext.as_str()) {
-                return plugin.decode(path);
+                return plugin.decode(path).map_err(|err| {
+                    eprintln!("[plugin] failed to decode {}: {}", path.display(), err);
+                    err
+                }).map(|image| {
+                    eprintln!("[plugin] decode succeeded for {}", path.display());
+                    image
+                });
             }
         }
 
+        if ext == "avif" {
+            eprintln!("[plugin] no plugin handles .avif; trying built-in image decoder");
+        }
+        
         // 5. プラグインになければ標準の image クレートで試行 (JPG, PNG など)
         let image = image::open(path)
             .map_err(|e| e.to_string())?;

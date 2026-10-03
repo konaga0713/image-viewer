@@ -37,9 +37,10 @@ impl MyApp {
         cc.egui_ctx.set_visuals(eframe::egui::Visuals::light()); // ライトモードの設定
         let mut plugin_mgr = PluginManager::new();
         plugin_mgr.load_plugins(std::path::Path::new("./plugins"));
+        let plugin_mgr = Arc::new(plugin_mgr);
 
         // サムネイル情報取得
-        let thumbnail = ThumbnailState::new(cc.egui_ctx.clone());
+        let thumbnail = ThumbnailState::new(cc.egui_ctx.clone(), plugin_mgr.clone());
 
         // ---------------------------------
         // メイン画面の描画
@@ -67,7 +68,7 @@ impl MyApp {
             image_files: Vec::new(),
             selected_file: None,
             sub_windows: Vec::new(),
-            plugin_mgr: Arc::new(plugin_mgr),
+            plugin_mgr,
             auto_fit_option: true,
             thumbnail,
             image_cache: ImageCache::new(IMAGE_CACHE_CAPACITY),

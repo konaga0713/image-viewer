@@ -163,6 +163,7 @@ impl SubWindow {
 
             match result {
                 Ok(image) => {
+                    let is_animated = image.is_animated();
                     let rgba = image.current_image().clone();
                     
                     // ImageContentを設定
@@ -173,11 +174,13 @@ impl SubWindow {
                     self.display_texture = None;
                     self.display_texture_size = None;
 
-                    // Static画像をCacheへ保存
-                    image_cache.insert(
-                        loaded_path.clone(),
-                        rgba,
-                    );
+                    // 表示用画像をCacheへ保存
+                    if !is_animated {
+                        image_cache.insert(
+                            loaded_path.clone(),
+                            rgba,
+                        );
+                    }
 
                     // Textureを作成
                     // self.update_texture(&ctx);

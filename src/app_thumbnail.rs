@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 
 use crate::jpeg_loader;
 use crate::image_cache::ImageCache;
+use crate::plugin::PluginManager;
 
 const THUMBNAIL_WIDTH: u32 = 160;
 const THUMBNAIL_HEIGHT: u32 = 120;
@@ -42,7 +43,7 @@ pub struct ThumbnailState {
 }
 
 impl ThumbnailState {
-    pub fn new(ctx: egui::Context) -> Self {
+    pub fn new(ctx: egui::Context, plugin_mgr: Arc<PluginManager>) -> Self {
         // サムネイル用チャンネル
         let (tx, request_rx) =
             mpsc::channel::<ThumbnailRequest>();
@@ -51,6 +52,7 @@ impl ThumbnailState {
 
         let current_generation = Arc::new(AtomicU64::new(0));
         let worker_generation = Arc::clone(&current_generation);
+        let worker_plugin_mgr = Arc::clone(&plugin_mgr);
 
             // サムネイルワーカースレッド
         std::thread::spawn(move || {
@@ -70,10 +72,10 @@ impl ThumbnailState {
                                 },
                         )
                     } else {
-                        image::open(&request.path)
+                        worker_plugin_mgr.try_decode(&request.path)
                             .map(|image| {
-                                let thumbnail = image.to_rgba8(); 
-                                create_thumbnail(&thumbnail)
+                                let thumbnail = image.current_image(); 
+                                create_thumbnail(thumbnail)
                             })
                             .map_err(|e| e.to_string())
                     };
