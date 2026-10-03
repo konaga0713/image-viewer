@@ -19,7 +19,7 @@ pub fn load(path: &Path, mode: LoadMode,) -> Result<image::RgbaImage, String> {
             load_scaled_from_data(&data, max_width, max_height)
         }
         LoadMode::Full => {
-            // println!("[MAIN IMAGE] load_scaled_from_data");
+            println!("[MAIN IMAGE] load_full: {}", path.display());
             load_full(&data)
         }
     }        
@@ -100,15 +100,6 @@ println!(
         .ok_or_else(|| {"バッファからRgbaImageの生成に失敗しました".to_string()
     })?;
     
-    // println!("[TIME] scaled RgbaImage::from_raw: {:?}",  start.elapsed());
-    // println!(
-    //     "[JPEG SCALE] decoded={}x{}, target={}x{}",
-    //     image.width(),
-    //     image.height(),
-    //     max_width,
-    //     max_height,
-    // );
-
     let start = std::time::Instant::now();
     let result = resize_to_fit(
         &image, 
@@ -134,7 +125,6 @@ println!(
 // JPEG画像読込
 pub fn load_scaled(path: &Path, max_width: u32, max_height: u32
 ) -> Result<image::RgbaImage, String> {
-    println!("load_scaled load_scaled_from_data"); 
     let data = std::fs::read(path)
         .map_err(|e| format!("JPEG読み込み失敗: {}", e))?;
 

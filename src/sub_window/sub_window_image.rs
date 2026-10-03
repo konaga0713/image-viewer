@@ -92,19 +92,24 @@ impl SubWindow {
     pub fn show_texture(&mut self, ui: &mut egui::Ui, ctx:&egui::Context,) {
 
         let available_size = ui.available_size();
+        let use_original_texture = 
+            self.image.as_ref().is_some_and(|image|
+                !image.is_animated());
 
         // 表示するTextureを決定
-        if self.fit_to_screen {
-            self.ensure_display_texture(ctx, available_size);
-        } else {
+        if self.fit_to_screen && use_original_texture {
             if self.texture.is_none() {
                 self.update_texture(ctx);
             }
+        } else if self.fit_to_screen {
+            self.ensure_display_texture(ctx, available_size);
+        } else if self.texture.is_none() {
+            self.update_texture(ctx);
         };
 
         // 表示Textureを取得
         let Some(texture) = 
-            (if self.fit_to_screen {
+            (if self.fit_to_screen && !use_original_texture {
                 self.display_texture.as_ref()
             } else {
                 self.texture.as_ref()
@@ -115,19 +120,23 @@ impl SubWindow {
 
         let image_size = texture.size_vec2() * self.zoom_scale;
 
-        let display_size = 
-            if self.fit_to_screen {
-                image_size
+        let display_size = if self.fit_to_screen {
+            let fit_scale = (available_size.x / image_size.x)
+                .min(available_size.y / image_size.y)
+                .min(1.0);
+
+                image_size * fit_scale
             } else {
-                image_size * self.zoom_scale
+                image_size
             };
-// println!(
-//     "[IMAGE] texture={}x{}, available={}x{}",
-//     texture.size()[0],
-//     texture.size()[1],
-//     available_size.x,
-//     available_size.y,
-// );
+
+println!(
+    "[IMAGE] texture={}x{}, available={}x{}",
+    texture.size()[0],
+    texture.size()[1],
+    available_size.x,
+    available_size.y,
+);
 
         // スクロールエリアを配置し、基準を左上に設定
         egui::ScrollArea::both()

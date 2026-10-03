@@ -1,2 +1,4 @@
 /target
 /pics
+/plugins/avif_decoder/target
+*.log
