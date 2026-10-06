@@ -32,7 +32,7 @@ impl PluginManager {
 
     /// plugins ディレクトリから動的ライブラリ (.dll / .so) を動的にロード
     pub fn load_plugins(&mut self, plugin_dir: &Path) {
-        eprintln!("[plugin] searching directory: {}", plugin_dir.display());
+        // println!("[plugin] searching directory: {}", plugin_dir.display());
         if !plugin_dir.exists() {
             return;
         }
@@ -58,7 +58,7 @@ impl PluginManager {
                 continue;
             }
 
-            eprintln!("[plugin] trying library: {}", path.display());
+            // println!("[plugin] trying library: {}", path.display());
             unsafe {
                 let lib = match Library::new(&path) {
                     Ok(lib) => lib,
@@ -76,11 +76,11 @@ impl PluginManager {
                 };
 
                 let plugin = func();
-                eprintln!("[plugin] loaded plugin: {} (supports: {:?})", path.display(), plugin.supported_extensions());
+                // println!("[plugin] loaded plugin: {} (supports: {:?})", path.display(), plugin.supported_extensions());
                 self.plugins.push(plugin);
                 self._libs.push(lib); // ライブラリを保持して解放されない   
             }
-            eprintln!("[plugin] {} plugin(s) loaded", self.plugins.len());
+            // println!("[plugin] {} plugin(s) loaded", self.plugins.len());
         }
         
     }    
@@ -144,7 +144,7 @@ impl PluginManager {
                     eprintln!("[plugin] failed to decode {}: {}", path.display(), err);
                     err
                 }).map(|image| {
-                    eprintln!("[plugin] decode succeeded for {}", path.display());
+                    // println!("[plugin] decode succeeded for {}", path.display());
                     image
                 });
             }

@@ -1780,28 +1780,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "image-viewer"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "directories",
- "eframe",
- "egui",
- "egui_extras",
- "image 0.24.9",
- "image-webp",
- "libloading 0.9.0",
- "num-format",
- "rfd",
- "serde",
- "toml",
- "turbojpeg",
- "webp-animation",
- "windows",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "image-webp"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3226,6 +3204,28 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rixviewer"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "directories",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "image 0.24.9",
+ "image-webp",
+ "libloading 0.9.0",
+ "num-format",
+ "rfd",
+ "serde",
+ "toml",
+ "turbojpeg",
+ "webp-animation",
+ "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

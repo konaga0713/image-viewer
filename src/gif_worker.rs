@@ -58,9 +58,7 @@ pub fn load_gif_worker(path: PathBuf, tx: Sender<GifLoadMessage>, ctx: egui::Con
                 // println!("[GIF WORKER] sending Finished");
                 if let Err(e) = tx.send(GifLoadMessage::Finished) {
                     eprintln!("[GIF WORKER] Finished send failed: {}",e);
-                } else {
-                    println!("[GIF WORKER] Finished sent");
-                }            
+                }           
             }
             Err(err) => {
                 eprintln!("[GIF WORKER] Error: {}", err);

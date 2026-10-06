@@ -18,6 +18,7 @@ impl SubWindow {
             return;
         }
         self.image_index = index;
+        self.zoom_scale = 1.0; // ズーム率をリセット
         self.current_path = 
             self.directory_files[index].clone();
 

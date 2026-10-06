@@ -19,7 +19,7 @@ pub fn load(path: &Path, mode: LoadMode,) -> Result<image::RgbaImage, String> {
             load_scaled_from_data(&data, max_width, max_height)
         }
         LoadMode::Full => {
-            println!("[MAIN IMAGE] load_full: {}", path.display());
+            // println!("[MAIN IMAGE] load_full: {}", path.display());
             load_full(&data)
         }
     }        
@@ -69,15 +69,15 @@ fn load_scaled_from_data(data: &[u8], max_width: u32, max_height: u32
         format: turbojpeg::PixelFormat::RGBA,
     };
 
-println!(
-    "[JPEG SCALE] original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
-    header.width,
-    header.height,
-    max_width,
-    max_height,
-    scale,
-    scaling_factor,
-);
+// println!(
+//     "[JPEG SCALE] original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
+//     header.width,
+//     header.height,
+//     max_width,
+//     max_height,
+//     scale,
+//     scaling_factor,
+// );
 
     // let start = std::time::Instant::now();
     let res = decompressor.decompress(data, image_buf);
@@ -107,16 +107,16 @@ println!(
         max_height
         );
 
-    println!(
-        "[JPEG SCALE] scaled resize: {:?}, original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
-        start.elapsed(),
-        header.width,
-        header.height,
-        max_width,
-        max_height,
-        scale,
-        scaling_factor,
-    );
+    // println!(
+    //     "[JPEG SCALE] scaled resize: {:?}, original={}x{}, requested={}x{}, scale={:.6}, factor={:?}",
+    //     start.elapsed(),
+    //     header.width,
+    //     header.height,
+    //     max_width,
+    //     max_height,
+    //     scale,
+    //     scaling_factor,
+    // );
 
     Ok(result)
 

@@ -26,6 +26,7 @@ pub struct SubWindow {
     pub folder_history: Vec<PathBuf>, /// フォルダ移動履歴（前後移動用）
     pub fit_to_screen: bool,     /// オプション: 自動縮小モード
     pub zoom_scale: f32,         /// 手動拡大縮小用スケール
+    pub display_scale: f32,      /// 表示用スケール（fit_to_screen有効時は自動計算）
     pub show_property: bool,     /// プロパティ表示フラグ
     
     pub texture: Option<TextureHandle>,     ///元画像
@@ -66,6 +67,7 @@ impl SubWindow {
             folder_history: Vec::new(),
             fit_to_screen,
             zoom_scale: 1.0,
+            display_scale: 1.0,
             texture: None,
             display_texture: None,
             display_texture_size: None,

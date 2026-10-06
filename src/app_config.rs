@@ -10,6 +10,8 @@ use directories::ProjectDirs;
 pub struct AppConfig {
     pub last_folder: Option<PathBuf>,
     pub tree_width: f32,
+    #[serde(default, skip)]
+    pub log_enabled: bool,
 }
 
 impl AppConfig {
@@ -17,8 +19,8 @@ impl AppConfig {
     fn config_path() -> Option<PathBuf> {
         let dirs = ProjectDirs::from(
             "com",
-            "konaga0713",
-            "ImageViewer",
+            "RixViewer",
+            "RixViewer",
         )?;
         Some(
             dirs.config_dir()
@@ -100,6 +102,7 @@ impl Default for AppConfig {
         Self {
             last_folder: None,
             tree_width: 250.0,
+            log_enabled: false,
         }
     }
 }

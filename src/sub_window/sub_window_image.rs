@@ -130,13 +130,19 @@ impl SubWindow {
                 image_size
             };
 
-println!(
-    "[IMAGE] texture={}x{}, available={}x{}",
-    texture.size()[0],
-    texture.size()[1],
-    available_size.x,
-    available_size.y,
-);
+        if let Some(original_size) = self.original_image_size {
+            if original_size.x > 0.0 {
+                self.display_scale = display_size.x / original_size.x;
+            }
+        }
+        
+        // println!(
+        //     "[IMAGE] texture={}x{}, available={}x{}",
+        //     texture.size()[0],
+        //     texture.size()[1],
+        //     available_size.x,
+        //     available_size.y,
+        // );
 
         // スクロールエリアを配置し、基準を左上に設定
         egui::ScrollArea::both()

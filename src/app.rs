@@ -29,10 +29,15 @@ pub struct MyApp {
     //環境情報
     pub config: AppConfig,
     pub folder_tree: FolderTree,
+    pub show_settings: bool,
 }
 
 impl MyApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let config = AppConfig::load();
+        if let Err(err) = crate::app_log::configure(config.log_enabled) {
+            eprintln!("Log initialization failed: {}", err);
+        }
         setup_japanese_font(&cc.egui_ctx);  // 日本語フォントの設定
         cc.egui_ctx.set_visuals(eframe::egui::Visuals::light()); // ライトモードの設定
         let mut plugin_mgr = PluginManager::new();
@@ -45,7 +50,6 @@ impl MyApp {
         // ---------------------------------
         // メイン画面の描画
         // ---------------------------------
-        let config = AppConfig::load();
         let current_dir = config
             .last_folder
             .clone()
@@ -76,6 +80,7 @@ impl MyApp {
             property_path: None,
             config,
             folder_tree,
+            show_settings: false,
         };
 
         app.refresh_files();

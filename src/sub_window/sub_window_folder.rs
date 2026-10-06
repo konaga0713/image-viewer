@@ -22,11 +22,12 @@ impl SubWindow {
             return;
         }
 
-        println!("new_dir = {:?}", new_dir);    
+        // println!("new_dir = {:?}", new_dir);    
         // 画像一覧を取得        
         self.directory_files = image_files;
         self.current_path = self.directory_files[0].clone();
         self.image_index = 0;
+        self.zoom_scale = 1.0; // ズーム率をリセット
 
         self.texture = None;
         self.image = None;
@@ -131,7 +132,7 @@ impl SubWindow {
     pub fn move_to_previous_directory (&mut self, ctx: &egui::Context, plugin_mgr: &Arc<PluginManager>, image_cache: &mut ImageCache) {
 
         if let Some(new_dir) = self.previous_directory(plugin_mgr) {
-            println!("TREE PREV = {:?}", new_dir);
+            // println!("TREE PREV = {:?}", new_dir);
             self.change_directory(new_dir, &ctx, plugin_mgr, image_cache);
         } 
     }

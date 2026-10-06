@@ -73,7 +73,7 @@ impl SubWindow {
         else {
             return;
         };
-println!("[SubWindow] update_texture: {:?}", self.current_path);
+
         let rgba = image.current_image();
 
         let size = [

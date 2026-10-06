@@ -23,6 +23,7 @@ impl eframe::App for MyApp {
         self.show_sub_windows(&ctx);
         // 上部パネル
         self.show_top_panel(ui);
+        self.show_settings_window(&ctx);
         // 左ペイン
         self.show_left_panel(ui);
         // 画像一覧
@@ -102,6 +103,9 @@ impl MyApp {
                         self.change_current_dir(path);
                     }
                 }
+                if ui.button("設定").clicked() {
+                    self.show_settings = true;
+                }
                 ui.label(format!("現在地: {}", self.current_dir.display()));
                 ui.separator();
                 ui.checkbox(&mut self.auto_fit_option, "新規サブ画面の自動縮小をデフォルトにする");
@@ -127,6 +131,30 @@ impl MyApp {
                 }
                 
             });
+    }
+
+    fn show_settings_window(&mut self, ctx: &egui::Context) {
+        if !self.show_settings {
+            return;
+        }
+
+        egui::Window::new("設定")
+            .open(&mut self.show_settings)
+            .show(ctx, |ui| {
+                let response = ui.checkbox(&mut self.config.log_enabled, "ログフォルダを作成する");
+                if response.changed() {
+                    match crate::app_log::configure(self.config.log_enabled) {
+                        Ok(()) => self.config.save(),
+                        Err(err) => {
+                            self.config.log_enabled = false;
+                            let _ = crate::app_log::configure(false);
+                            ui.label(format!("ログ設定に失敗しました： {}", err));
+                    }
+                }
+            }
+
+            ui.label("実行ファイルと同じ場所のLogフォルダに月別ログを追記します。");
+        });
     }
 
     fn show_image_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,) {

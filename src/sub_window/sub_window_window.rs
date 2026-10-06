@@ -22,6 +22,22 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 
 impl SubWindow {
+    /// サブウィンドウのサイズを、現在のズーム率に合わせて変更する。
+    /// ただし、タスクバー等を除いた使用可能領域を超えて表示可能
+    pub (crate) fn resize_window_for_zoom(&self, ctx: &egui::Context) {
+        let Some(original_size) = self.original_image_size else {
+            return;
+        };
+
+        let scaled_image_size = original_size * self.zoom_scale;
+        let target_inner = egui::vec2(
+            (scaled_image_size.x + SIDE_MARGIN * 2.0)
+                .max(MIN_WINDOW_WIDTH),
+            (scaled_image_size.y + TOP_MARGIN)
+                .max(MIN_WINDOW_HEIGHT),
+        );
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(target_inner));
+    }
     /// サブウィンドウのサイズの設定
     /// タスクバー等を除いた使用可能領域を超えないようにする。
     pub(crate) fn resize_window_to_image(&self, ctx: &egui::Context) {
@@ -148,17 +164,11 @@ impl SubWindow {
         let overflow_x = (outer_rect.max.x - work_rect.max.x).max(0.0);
         let overflow_y = (outer_rect.max.y - work_rect.max.y).max(0.0);
 
-        println!(
-            "outer={:?} work={:?}",
-            outer_rect,
-            work_rect
-        );
-
-        println!(
-            "overflow=({}, {})",
-            overflow_x,
-            overflow_y
-        );
+        // println!(
+        //     "overflow=({}, {})",
+        //     overflow_x,
+        //     overflow_y
+        // );
         
         // はみ出していなければ補正終了
         if overflow_x <= 0.0 && overflow_y <= 0.0 {

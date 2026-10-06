@@ -48,10 +48,7 @@ impl SubWindow {
         egui::Panel::top("sub_top_panel").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.fit_to_screen, "画面に合わせて自動縮小");
-                ui.label(format!("拡大率: {:.0}%", self.zoom_scale * 100.0));
-                if ui.button("リセット").clicked() {
-                    self.zoom_scale = 1.0;
-                }
+                ui.label(format!("拡大率: {:.0}%", self.display_scale * 100.0));
                 ui.label(format!(" ( {} / {} )", self.image_index + 1, self.directory_files.len()));
 
                 if self.loading {
@@ -103,6 +100,16 @@ impl SubWindow {
                 }
 
             });
+            if ui.button("拡大").on_hover_text("画像を拡大（最大8倍）").clicked() {
+                self.zoom_scale = (self.zoom_scale * 2.0).min(8.0);
+                self.resize_window_for_zoom(ctx);
+                ctx.request_repaint();
+            }
+            if ui.button("縮小").on_hover_text("画像を縮小（最小1/8倍）").clicked() {
+                self.zoom_scale = (self.zoom_scale / 2.0).max(0.125);
+                self.resize_window_for_zoom(ctx);
+                ctx.request_repaint();
+            }
         });
     }
 
