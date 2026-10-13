@@ -51,6 +51,7 @@ impl MyApp {
                 .to_string_lossy();    
 
             let viewport_builder = egui::ViewportBuilder::default()
+                .with_resizable(true)
                 .with_title(format!("Sub Window - {}", filename));
 
             #[cfg(target_os = "windows")]

@@ -101,13 +101,24 @@ impl SubWindow {
 
             });
             if ui.button("拡大").on_hover_text("画像を拡大（最大8倍）").clicked() {
-                self.zoom_scale = (self.zoom_scale * 2.0).min(8.0);
-                self.resize_window_for_zoom(ctx);
+                let base_scale = ( self.display_scale  / self.zoom_scale).max(f32::EPSILON);
+
+                let next_display_scale = if self.display_scale  < 1.0 {
+                    1.0 
+                } else {
+                    (self.display_scale * 2.0).min(8.0)
+                };
+
+                self.zoom_scale = next_display_scale / base_scale;
                 ctx.request_repaint();
             }
+
             if ui.button("縮小").on_hover_text("画像を縮小（最小1/8倍）").clicked() {
-                self.zoom_scale = (self.zoom_scale / 2.0).max(0.125);
-                self.resize_window_for_zoom(ctx);
+                let base_scale = ( self.display_scale  / self.zoom_scale).max(f32::EPSILON);
+
+                let next_display_scale = (self.display_scale / 2.0).max(0.125);
+  
+                self.zoom_scale = next_display_scale / base_scale;
                 ctx.request_repaint();
             }
         });
