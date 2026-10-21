@@ -170,10 +170,12 @@ impl MyApp {
             let scroll_to_top = self.thumbnail.scroll_to_top;
 
             let row_height = THUMBNAIL_FRAME_SIZE.y + 20.0 + ui.spacing().item_spacing.y;
-            egui::ScrollArea::vertical().show_rows(ui, row_height, row_count, |ui, rows|{
-                if scroll_to_top {
-                    ui.scroll_to_cursor(Some(egui::Align::TOP));
-                }
+            let mut scroll_area = egui::ScrollArea::vertical();
+            if scroll_to_top{
+                // 保存済みのスクロール位置を明示的に先頭へ戻す。
+                scroll_area = scroll_area.vertical_scroll_offset(0.0);
+            }
+            scroll_area.show_rows(ui, row_height, row_count, |ui, rows|{
                 for row_index in rows {
                     let start = row_index * columns;
                     let end = (start + columns).min(self.image_files.len());
